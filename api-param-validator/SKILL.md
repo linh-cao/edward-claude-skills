@@ -23,18 +23,22 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 ## How to Invoke This Skill
 
 Prompt format:
+```
 Test API params for [METHOD] [endpoint] on [site].
 Spec: [paste content here, or attach file/screenshot]
 Testspec: [attach file if available — optional]
 Token: [bearer token or cookie value]
+```
 
 Example:
+```
 Test API params for GET /api/v1/schedule/events on https://example.garoon.com
 Token: Bearer eyJhbGci...
 Spec:
 event_id (path, integer, required): ID of the event
 limit (query, integer, optional): max 100, min 1
 start_datetime (query, datetime, optional): ISO 8601 format
+```
 
 ---
 
@@ -80,18 +84,43 @@ Extract and build a structured parameter map:
   "body_fields": []
 }
 ```
-
 For each parameter, note:
 - Name and type
 - Required / optional
 - Constraints: min, max, enum, format, pattern
 - Any special business logic mentioned in spec
 
+### Nested Body Parsing (POST)
+
+For POST request bodies, recursively flatten ALL nested fields into leaf paths,
+regardless of field names. Use this notation:
+
+- Object field      → <parent>.<child>
+- Array of objects  → <array>[].<child>
+- Array of values   → <array>[]
+
+Apply this to whatever field names appear in the actual spec/testspec/body —
+the names below are only examples of the notation, not fixed fields.
+
+Example (body with fields "mentions", "attachmentIds"):
+  mentions[].id        (string)
+  mentions[].type      (enum)
+  attachmentIds[]      (array of string)
+  data                 (string)
+
+Record each leaf field with its type, exactly like top-level params.
+If the spec does not describe a nested field's type, infer it from the
+example body or testspec; if still unclear, ask the user.
+
+Add each flattened leaf field as an entry in the `body_fields` array of the
+parameter map (same structure as path_params/query_params: name, type,
+required, constraints). The leaf path is the field "name".
+
 If `references/garoon_glossary.md` exists -> read it now to understand Garoon-specific terms in the spec.
 
 ---
 
-## Step 1.5 — Parse Testspec (if provided)
+## Step 2 — Parse Testspec (if provided)
 
 If the user attaches a testspec file, read and extract the following for each test case:
 - Parameter name
@@ -105,6 +134,8 @@ For each test case in the testspec:
 - If it matches a parameter + data type/label already in sample_data -> use the expected result from testspec instead of the default 4xx
 - If testspec contains a case not covered by sample_data -> add it as a new test case
 
+Note: the final merge is applied in Step 4 when test cases are generated; this step only records the testspec expected results and detects conflicts.
+
 ### Conflict detection
 Check for conflicts between spec and testspec and report them before proceeding. Common conflict types:
 - Spec says param X is required, but testspec has a case omitting X with expected result 200
@@ -113,16 +144,19 @@ Check for conflicts between spec and testspec and report them before proceeding.
 - Spec defines a constraint, but testspec expected result contradicts it
 
 Report each conflict in this format:
-
+```
   Conflict detected — [param_name]
   Spec     : [what the spec says]
   Testspec : [what the testspec says]
   Question : [specific question for the user to clarify]
+```
 
 Stop and wait for user confirmation before generating the collection if any conflict is found.
-If no conflicts are found, proceed to Step 2 as normal.
+If no conflicts are found, proceed to Step 3 as normal.
 
-## Step 2 — Load Sample Data
+---
+
+## Step 3 — Load Sample Data
 
 Read from `sample_data/` based on each parameter's type:
 
@@ -134,30 +168,81 @@ Read from `sample_data/` based on each parameter's type:
 | email | `sample_data/email.json` |
 | boolean | `sample_data/boolean.json` |
 | id (numeric identifier) | `sample_data/id.json` |
+| enum | `sample_data/enum.json` |
 
 Each file contains labeled invalid test values. Additionally, for each parameter with `min`/`max` constraints, append out-of-range values dynamically.
 
 ---
 
-## Step 3 — Generate Test Cases
+## Step 4 — Generate Test Cases
+
+### Build a Valid Baseline Request
+Rules:
+- Required path parameters must use existing valid values.
+- Required query/body parameters must use valid values.
+- Optional parameters should be omitted in the minimal happy path unless the spec requires them.
+- If the spec provides examples, use them first.
+- If no valid value can be inferred, ask the user.
+
+Default valid value strategy:
+- integer with min/max: use a value inside the range
+- string: use `"test"` unless pattern/enum requires another value
+- enum: use the first valid enum value
+- datetime: use the exact format required by the spec
+- email: use `test@example.com`
+- boolean: use `true`
+- id: ask the user for an existing valid ID unless the spec provides one
 
 ### Structure
 
 For each invalid value per parameter, create one test case:
 - All other parameters use their valid default values
 - Only the target parameter has the invalid value
-- Expected result: 4xx error
 - Expected result priority order: (1) testspec if provided → (2) spec constraints → (3) default 4xx from sample_data
 
 Also include:
-- 1 happy path case: all params valid -> expect 2xx
+- 1 happy path case: all params valid, all required params present → expect 2xx
+
+### Nested Body Field Rules
+
+These rules apply to any nested field, regardless of its name:
+
+- Test each leaf field independently; keep all sibling fields valid.
+- For an array of objects, apply the invalid value to ONE element only
+  (e.g. the first element), keeping other elements valid.
+- For an array of primitives, additionally test: empty array,
+  wrong element type, and duplicate values.
+- Naming for nested cases follows the same convention using the leaf path:
+  POST /schedule/events | mentions[].type: invalid_enum
+  POST /schedule/events | attachmentIds[]: wrong_element_type
+
+### Enum Field Rules
+
+For any field whose spec/testspec defines a fixed set of allowed values:
+
+- Generate cases: value outside the allowed set, wrong case
+  (e.g. lowercase when uppercase is required), empty string, null,
+  and integer-instead-of-string.
+- Read allowed values from the spec/testspec — do not assume a fixed list.
+- Use sample_data/enum.json for the generic invalid values, and add the
+  "value outside allowed set" dynamically based on the actual enum.
+
+### Optional Parameter Rules
+
+For optional parameters:
+- Do not generate "missing required" cases.
+- Include one happy path where optional parameters are omitted.
+- Still generate invalid value cases when the optional parameter is explicitly included.
+- If an optional parameter affects filtering or pagination, include it only when needed for that validation case.
 
 ### Naming Convention
+```
 [METHOD] [endpoint_short] | [param_name]: [data_label]
 Examples:
 GET /schedule/events | limit: negative_number
 POST /schedule/events | title: special_characters
 DELETE /schedule/events/{id} | event_id: string_value
+```
 
 ### Scope
 
@@ -174,22 +259,25 @@ Out of scope — do NOT generate:
 
 ---
 
-## Step 4 — Generate Postman Collection
+## Step 5 — Generate Postman Collection
 
 Output file: `output/collection.json` (Postman Collection v2.1 format)
 
 Each request must include:
+1. Pre-request script — inject expected_status using the value determined in Step 4:
 
-Test script (assertions):
+  pm.variables.set("expected_status", "400");
+
+The value follows the priority order: testspec → spec constraint → default 4xx.
+
+2. Test script (assertions):
 ```javascript
-// For invalid data cases:
-pm.test("Status is 4xx", function () {
-    pm.expect(pm.response.code).to.be.within(400, 499);
-});
+// Each request sets its own expected_status variable based on
+// priority: testspec → spec constraint → default 4xx
+const expected = parseInt(pm.variables.get("expected_status"));
 
-// For happy path:
-pm.test("Status is 2xx", function () {
-    pm.expect(pm.response.code).to.be.within(200, 299);
+pm.test("Status is " + expected, function () {
+    pm.expect(pm.response.code).to.equal(expected);
 });
 ```
 
@@ -199,7 +287,7 @@ Use environment variables throughout:
 
 ---
 
-## Step 5 — Run Newman
+## Step 6 — Run Newman
 
 Check if Newman is installed. If not, show setup instructions:
 
@@ -219,16 +307,17 @@ newman run output/collection.json \
 
 ---
 
-## Step 6 — Report Summary
+## Step 7 — Report Summary
 
 After Newman finishes, output a structured summary to the chat:
+```
 === API Validation Test Summary ===
 Endpoint : GET /api/v1/schedule/events
 Run time : 2025-05-28 10:30
 Total cases : 38
 Passed      : 34
 Failed      : 4
-Failed cases (source: testspec / spec / sample_data default):
+Failed cases (source: testspec / spec constraint / sample_data default):
 
 - limit: string_value      -> Expected 400, got 200  [source: sample_data default]
 - event_id: float_number   -> Expected 400, got 500  [source: sample_data default]
@@ -236,12 +325,13 @@ Failed cases (source: testspec / spec / sample_data default):
 - offset: long_number      -> Expected 400, got 200  [source: spec constraint]
 
 Full HTML report: output/report.html
+```
 
 ---
 
-## Clarifying the Spec
+## Clarifying the Spec/TestSpec
 
-If the spec is ambiguous, ask before generating:
+If the spec or testspec is ambiguous, ask before generating:
 - What HTTP status code is expected for invalid data? (400? 422?)
 - Is this parameter required or optional?
 - What is the valid range for this numeric field?
@@ -249,6 +339,7 @@ If the spec is ambiguous, ask before generating:
 - Is 0 a valid value for this ID field?
 
 Check `references/garoon_glossary.md` for Garoon-specific terms if the file exists.
+Check `references/garoon_api_conventions.md` for common API conventions, status code policy, datetime format, ID behavior.
 
 ---
 
@@ -264,13 +355,16 @@ Only raise a suggestion if it meets at least one of these criteria:
 Do NOT suggest for routine cases or low-risk fields. Keep it brief.
 
 Format:
+```
 Warning: Suggestion — [param_name]
 Reason  : [why this is worth flagging]
 Add test : [specific data or case to add]
+```
 
 ---
 
 ## Folder Structure
+```
 api-param-validator/
 ├── SKILL.md
 ├── sample_data/
@@ -279,19 +373,24 @@ api-param-validator/
 │   ├── datetime.json
 │   ├── email.json
 │   ├── boolean.json
+│   ├── enum.json
 │   └── id.json
 ├── references/
 │   ├── garoon_glossary.md   (optional)
-│   └── garoon_bugs.md       (optional)
+│   ├── garoon_bugs.md       (optional)
+│   ├── garoon_api_conventions.md       (optional)
+│   └── garoon_manual_guideline.md       (optional)
 └── output/                  (generated at runtime)
     ├── collection.json
     └── report.html
-
+```
 ---
 
 ## Optional: Garoon System Knowledge
 
 If `references/garoon_glossary.md` exists -> read it during Step 1 to understand field semantics.
-If `references/garoon_bugs.md` exists -> read it during Step 3 to enhance smart suggestions.
+If `references/garoon_bugs.md` exists -> read it during Step 4 to enhance smart suggestions.
+If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, status code policy, datetime format, ID behavior
+If `references/garoon_manual_guideline.md` exists -> read it during Step 1 to Step 4 to understand about Garoon manual guideline/specification
 
 These files are optional. The skill works without them, but suggestions will be more targeted with them.
