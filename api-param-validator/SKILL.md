@@ -99,6 +99,7 @@ For each parameter, note:
 - Required / optional
 - Constraints: min, max, enum, format, pattern
 - Any special business logic mentioned in spec
+- Expected error status and/or errorCode for invalid input, IF the spec documents them (e.g. invalid event_id -> 404 / GRN_SCHD_13001)
 
 ### Nested Body Parsing (POST/PUT/PATCH)
 For POST/PUT/PATCH request bodies, recursively flatten ALL nested fields into leaf paths,
@@ -134,7 +135,11 @@ If `references/garoon_glossary.md` exists -> read it now to understand Garoon-sp
 If the user attaches a testspec file, read and extract the following for each test case:
 - Parameter name
 - Input value / data label
-- Expected result (HTTP status code, error message if specified)
+- Expected HTTP status code
+- Expected errorCode (ONLY if the testspec explicitly provides it, e.g. GRN_SCHD_13001)
+
+Do NOT extract or assert on the error `message` text — it is human-readable and may
+be localized, so it is unreliable for assertions.
 
 Then cross-reference with the parameter map from Step 1:
 
@@ -188,7 +193,7 @@ Rules:
 - Required path parameters must use existing valid values.
 - Required query/body parameters must use valid values.
 - Optional parameters should be omitted in the minimal happy path unless the spec requires them.
-- If the spec provides examples, use them first.
+- For valid baseline values, source priority is testspec → spec. Use a testspec happy-path value first if available, otherwise a spec example.
 - If no valid value can be inferred, ask the user.
 
 Default valid value strategy:
@@ -204,11 +209,12 @@ Default valid value strategy:
 For each invalid value per parameter, create one test case:
 - All other parameters use their valid default values
 - Only the target parameter has the invalid value
-- If the total generated cases exceed ~300, inform the user of the count and ask whether to proceed or narrow scope.
 - Expected result priority order: (1) testspec if provided → (2) spec constraints → (3) default 4xx from sample_data
 
 Also include:
 - 1 happy path case: all params valid, all required params present → expect 2xx
+
+If the total generated cases exceed ~300, inform the user of the count and ask whether to proceed or narrow scope.
 
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
@@ -269,26 +275,66 @@ Each request must include:
 - X-Cybozu-Authorization: {{cybozu_auth}}   (base64 of username:password, from env var)
 - Content-Type: application/json
 
-2. Pre-request script — inject expected_status using the value determined in Step 4:
+2. Pre-request script — inject the expected values determined in Step 4:
 ```javascript
-  pm.variables.set("expected_status", "400");
+pm.variables.set("expected_status", "400");
+
+// Optional: set ONLY when testspec or spec provides an expected errorCode (priority: testspec → spec).
+// If none is provided, do not set this variable — the errorCode check will be skipped.
+pm.variables.set("expected_error_code", "GRN_SCHD_13001");
 ```
-The value follows the priority order: testspec → spec constraint → default 4xx.
+- `expected_status` follows the priority order: testspec → spec constraint → default 4xx.
+- `expected_error_code` is optional. Source priority: testspec → spec. Set it only when either provides one for this case; otherwise omit it entirely.
 
 3. Test script (assertions):
 ```javascript
-// Each request sets its own expected_status variable based on
-// priority: testspec → spec constraint → default 4xx
+// 1. Always assert HTTP status (baseline)
 const expected = parseInt(pm.variables.get("expected_status"));
-
 pm.test("Status is " + expected, function () {
     pm.expect(pm.response.code).to.equal(expected);
 });
+
+// 2. Optionally assert errorCode — ONLY when expected_error_code is set.
+//    If not set, this check is skipped and status alone decides pass/fail.
+const expectedErrorCode = pm.variables.get("expected_error_code");
+if (expectedErrorCode) {
+    pm.test("errorCode is " + expectedErrorCode, function () {
+        let body;
+        try { body = pm.response.json(); } catch (e) { body = null; }
+        pm.expect(body && body.error && body.error.errorCode).to.equal(expectedErrorCode);
+    });
+}
+// Note: the error `message` text is intentionally NOT asserted.
 ```
 
 Use environment variables throughout:
 - {{base_url}} — Garoon site URL
 - {{cybozu_auth}} — base64 of username:password (used in X-Cybozu-Authorization header)
+
+### Special Value Handling
+
+Some sample_data files may include sentinel values that are markers, NOT literal
+values to send. They apply to ANY data type (boolean, integer, string, etc.) —
+handle them the same way everywhere. Never send the literal sentinel string as the value.
+
+`__NO_VALUE__` — field is present but carries no value:
+- Query/path parameter -> render as `field=` (key present, nothing after `=`)
+- Request body field    -> omit the field from the JSON body
+
+`__OMIT_FIELD__` — field key is entirely absent (tests a missing parameter):
+- Query/path parameter -> do not include the key at all (no `field`, no `field=`)
+- Request body field    -> omit the field from the JSON body
+- For a missing REQUIRED parameter, expect an error (4xx); for a missing OPTIONAL
+  parameter, this matches the happy-path behavior in Step 4.
+
+`__DUPLICATE__` — send the parameter twice, both using its valid value (from the
+Default valid value strategy in Step 4):
+- Query/path parameter -> render as `field=<valid>&field=<valid>`
+- Request body field    -> JSON objects cannot have duplicate keys; skip this case for body
+- Expected result is API-dependent (some accept and pick one value, some reject).
+  Do not assume 4xx — use testspec/spec if available, otherwise flag the result for review.
+
+These rules are shared across all sample_data files; do not special-case per type.
 
 ---
 
@@ -328,18 +374,27 @@ After Newman finishes, output a structured summary to the chat:
 === API Validation Test Summary ===
 Endpoint : GET /api/v1/schedule/events
 Run time : 2025-05-28 10:30
-Total cases : 38
-Passed      : 34
-Failed      : 4
+Total cases : 40
+Passed  : 33
+Failed  : 5
+Skipped : 2
+Skipped cases:
+- isActive: duplicate_param  -> skipped (duplicate not applicable in JSON body)
+
 Failed cases (source: testspec / spec constraint / sample_data default):
 
 - limit: string_value      -> Expected 400, got 200  [source: sample_data default]
 - event_id: float_number   -> Expected 400, got 500  [source: sample_data default] [POTENTIAL BUG: got 500]
 - start_datetime: spaces   -> Expected 400, got 200  [source: testspec]
 - offset: long_number      -> Expected 400, got 200  [source: spec constraint]
+- event_id: string_value   -> status OK (400) but errorCode mismatch: expected GRN_SCHD_13001, got GRN_CMMN_00001  [source: testspec]
 
 Full HTML report: output/report.html
 ```
+When an expected_error_code was set and the actual errorCode differs (even if the
+HTTP status matched), report it as a failed case with both expected and actual
+errorCode. A correct status but wrong errorCode means the API rejected the input
+for a different reason than expected.
 
 When the actual status is 5xx (especially 500), flag it separately with
 `[POTENTIAL BUG: got 5xx]` in the report, not just as a normal mismatch.
