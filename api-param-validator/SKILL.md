@@ -8,8 +8,8 @@ description: 'Automates API parameter data validation testing for Garoon APIs us
 Automates data validation testing for Garoon API parameters. Given a spec/testspec + endpoint info, generates a complete Postman collection covering standard invalid data scenarios, runs it via Newman, and produces a pass/fail report.
 
 ---
-## Safety and Runtime Rules
 
+## Safety and Runtime Rules
 - Never print, log, or save real credentials (X-Cybozu-Authorization / base64 of username:password) in generated files or reports.
 - Always use `{{cybozu_auth}}` (or another environment variable) for authentication.
 - Do not hard-code credentials into `collection.json`.
@@ -18,10 +18,10 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 - If POST creates data, prefer using clearly identifiable test data.
 - Only run against test environments. For Cloud Neco: the domain MUST contain `cybozu-dev`; if it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
 - Onpremise: the site is IP-based, assumed to be a test instance, so run normally without confirmation.
+
 ---
 
 ## How to Invoke This Skill
-
 Prompt format:
 ```
 Test API params for [METHOD] [endpoint] on [site].
@@ -39,12 +39,11 @@ event_id (path, integer, required): ID of the event
 limit (query, integer, optional): max 100, min 1
 start_datetime (query, datetime, optional): ISO 8601 format
 ```
+
 ---
 
 ## Step 0 — Check Required Inputs
-
 Before proceeding, verify these are present. If anything is missing, ask the user before continuing:
-
 | Input | Required | Notes |
 |---|---|---|
 | HTTP method | YES | Common: GET / POST / DELETE / PUT / PATCH. Methods with a request body (POST/PUT/PATCH) follow the body-field rules in Step 4 |
@@ -56,11 +55,9 @@ Before proceeding, verify these are present. If anything is missing, ask the use
 | Testspec file | Optional | Contains test cases + expected results; if provided, will be combined with spec to determine accurate expected results |
 
 ### Environments and URL Construction
-
 Two supported environments:
 - Cloud Neco: base_url ends in `/g/`   (e.g. https://ed21087-1.cybozu-dev.com/g/)
 - Onpremise:  base_url ends in `/grn/` (e.g. http://10.224.152.xxx/grn/)
-
 The full request URL = base_url + endpoint path.
 Drop `index.csp?` from any pasted site URL — that is the UI entry, not the API root.
 base_url must end in `/g/` or `/grn/`; append the endpoint path directly after it.
@@ -73,9 +70,7 @@ Example:
 See `references/garoon_api_conventions.md` for full URL/convention details if it exists.
 
 ### Providing Spec (when direct link sharing is restricted)
-
 Ask the user to choose one of these methods:
-
 1. Paste content directly — Copy text from sharedoc into the prompt (preferred)
 2. Attach .md / .txt file — Export sharedoc to file and attach
 3. Screenshot — Attach a screenshot; Claude will read it
@@ -85,9 +80,7 @@ If spec is unclear or ambiguous in places, see "Clarifying the Spec" section bef
 ---
 
 ## Step 1 — Parse the Spec
-
 Extract and build a structured parameter map:
-
 ```json
 {
   "path_params": [
@@ -100,6 +93,7 @@ Extract and build a structured parameter map:
   "body_fields": []
 }
 ```
+
 For each parameter, note:
 - Name and type
 - Required / optional
@@ -107,7 +101,6 @@ For each parameter, note:
 - Any special business logic mentioned in spec
 
 ### Nested Body Parsing (POST/PUT/PATCH)
-
 For POST/PUT/PATCH request bodies, recursively flatten ALL nested fields into leaf paths,
 regardless of field names. Use this notation:
 ```
@@ -138,7 +131,6 @@ If `references/garoon_glossary.md` exists -> read it now to understand Garoon-sp
 ---
 
 ## Step 2 — Parse Testspec (if provided)
-
 If the user attaches a testspec file, read and extract the following for each test case:
 - Parameter name
 - Input value / data label
@@ -174,9 +166,7 @@ If no conflicts are found, proceed to Step 3 as normal.
 ---
 
 ## Step 3 — Load Sample Data
-
 Read from `sample_data/` based on each parameter's type:
-
 | Type | File |
 |---|---|
 | integer / number | `sample_data/integer.json` |
@@ -193,7 +183,6 @@ Each file contains labeled invalid test values. Additionally, for each parameter
 ---
 
 ## Step 4 — Generate Test Cases
-
 ### Build a Valid Baseline Request
 Rules:
 - Required path parameters must use existing valid values.
@@ -212,7 +201,6 @@ Default valid value strategy:
 - id: ask the user for an existing valid ID unless the spec provides one
 
 ### Structure
-
 For each invalid value per parameter, create one test case:
 - All other parameters use their valid default values
 - Only the target parameter has the invalid value
@@ -223,9 +211,7 @@ Also include:
 - 1 happy path case: all params valid, all required params present → expect 2xx
 
 ### Nested Body Field Rules
-
 These rules apply to any nested field, regardless of its name:
-
 - Test each leaf field independently; keep all sibling fields valid.
 - For an array of objects, apply the invalid value to ONE element only
   (e.g. the first element), keeping other elements valid.
@@ -237,9 +223,7 @@ These rules apply to any nested field, regardless of its name:
   POST /schedule/events | attachmentIds[]: wrong_element_type
 
 ### Enum Field Rules
-
 For any field whose spec/testspec defines a fixed set of allowed values:
-
 - Generate cases: value outside the allowed set, wrong case
   (e.g. lowercase when uppercase is required), empty string, null,
   and integer-instead-of-string.
@@ -248,7 +232,6 @@ For any field whose spec/testspec defines a fixed set of allowed values:
   "value outside allowed set" dynamically based on the actual enum.
 
 ### Optional Parameter Rules
-
 For optional parameters:
 - Do not generate "missing required" cases.
 - Include one happy path where optional parameters are omitted.
@@ -265,7 +248,6 @@ DELETE /schedule/events/{id} | event_id: string_value
 ```
 
 ### Scope
-
 In scope:
 - Path parameters
 - Query string parameters
@@ -280,7 +262,6 @@ Out of scope — do NOT generate:
 ---
 
 ## Step 5 — Generate Postman Collection
-
 Output file: `output/collection.json` (Postman Collection v2.1 format)
 
 Each request must include:
@@ -312,11 +293,11 @@ Use environment variables throughout:
 ---
 
 ## Step 6 — Run Newman
-
 Check if Newman is installed by running: 
 ```bash
 newman --version
 ```
+
 - If it returns a version -> skip install, go straight to "Run command".
 - If it returns "command not found" -> run the install step below:
 ```bash
@@ -332,6 +313,7 @@ newman run output/collection.json \
   --reporters cli,htmlextra \
   --reporter-htmlextra-export output/report.html
 ```
+
 ### Run Failure Handling
 Before reporting results, check for infrastructure failures (not validation bugs):
 - If all/most cases return 401/403 -> auth is likely wrong. Stop and ask the user to re-check cybozu_auth. Do NOT report these as validation failures.
@@ -341,7 +323,6 @@ Before reporting results, check for infrastructure failures (not validation bugs
 ---
 
 ## Step 7 — Report Summary
-
 After Newman finishes, output a structured summary to the chat:
 ```
 === API Validation Test Summary ===
@@ -368,7 +349,6 @@ gracefully (unhandled exception) — a higher-severity signal worth highlighting
 ---
 
 ## Clarifying the Spec/TestSpec
-
 If the spec or testspec is ambiguous, ask before generating:
 - What HTTP status code is expected for invalid data? (400? 422?)
 - Is this parameter required or optional?
@@ -382,7 +362,6 @@ Check `references/garoon_api_conventions.md` for common API conventions, status 
 ---
 
 ## Smart Suggestions
-
 Only raise a suggestion if it meets at least one of these criteria:
 - Parameter is high-risk: ID field, datetime range, permission-related field
 - Spec is missing constraint info (no min/max, no format specified)
@@ -425,7 +404,6 @@ api-param-validator/
 ---
 
 ## Optional: Garoon System Knowledge
-
 If `references/garoon_glossary.md` exists -> read it during Step 1 to understand field semantics.
 If `references/garoon_bugs.md` exists -> read it during Step 4 to enhance smart suggestions.
 If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, status code policy, datetime format, ID behavior
