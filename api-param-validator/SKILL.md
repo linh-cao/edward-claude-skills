@@ -16,9 +16,8 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 - For POST/PUT/PATCH/DELETE requests, assume the request may modify data.
 - If DELETE requires an existing resource ID, ask the user for a disposable test resource ID.
 - If POST creates data, prefer using clearly identifiable test data.
-- Only run against test environments. This check applies to Cloud Neco. Cloud Neco: the domain MUST contain `cybozu-dev`. If it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
-- Onpremise: the site is IP-based, assumed to be a test instance, so run normally without confirmation
-- Warn the user before running POST/PUT/PATCH/DELETE against a non-test environment.
+- Only run against test environments. For Cloud Neco: the domain MUST contain `cybozu-dev`; if it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
+- Onpremise: the site is IP-based, assumed to be a test instance, so run normally without confirmation.
 ---
 
 ## How to Invoke This Skill
