@@ -14,12 +14,11 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 - Always use `{{cybozu_auth}}` (or another environment variable) for authentication.
 - Do not hard-code credentials into `collection.json`.
 - For POST/PUT/PATCH/DELETE requests, assume the request may modify data.
-- Warn the user before running POST/PUT/PATCH/DELETE against a non-test environment.
 - If DELETE requires an existing resource ID, ask the user for a disposable test resource ID.
-- If POST creates data, prefer using clearly identifiable test data and include cleanup notes when applicable.
-- Only run against test environments.
-- Cloud Neco: the domain MUST contain `cybozu-dev`. If it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
-- Onpremise: the site is IP-based. No need to confirm with the user that it is a test instance before running. Just run normally. 
+- If POST creates data, prefer using clearly identifiable test data.
+- Only run against test environments. This check applies to Cloud Neco. Cloud Neco: the domain MUST contain `cybozu-dev`. If it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
+- Onpremise: the site is IP-based, assumed to be a test instance, so run normally without confirmation
+- Warn the user before running POST/PUT/PATCH/DELETE against a non-test environment.
 ---
 
 ## How to Invoke This Skill
@@ -218,6 +217,7 @@ Default valid value strategy:
 For each invalid value per parameter, create one test case:
 - All other parameters use their valid default values
 - Only the target parameter has the invalid value
+- If the total generated cases exceed ~300, inform the user of the count and ask whether to proceed or narrow scope.
 - Expected result priority order: (1) testspec if provided → (2) spec constraints → (3) default 4xx from sample_data
 
 Also include:
@@ -333,6 +333,12 @@ newman run output/collection.json \
   --reporters cli,htmlextra \
   --reporter-htmlextra-export output/report.html
 ```
+### Run Failure Handling
+Before reporting results, check for infrastructure failures (not validation bugs):
+- If all/most cases return 401/403 -> auth is likely wrong. Stop and ask the user to re-check cybozu_auth. Do NOT report these as validation failures.
+- If requests cannot connect (timeout, DNS, connection refused) -> report a connection error and ask the user to check base_url / network / VPN. Do NOT report as test results.
+- If Newman exits with an error before completing -> surface the actual error instead of a partial pass/fail summary.
+
 ---
 
 ## Step 7 — Report Summary
@@ -401,13 +407,13 @@ Add test : [specific data or case to add]
 api-param-validator/
 ├── SKILL.md
 ├── sample_data/
-│   ├── integer.json
-│   ├── string.json
+│   ├── boolean.json
 │   ├── datetime.json
 │   ├── email.json
-│   ├── boolean.json
 │   ├── enum.json
-│   └── id.json
+│   ├── id.json
+│   ├── integer.json
+│   └── string.json
 ├── references/
 │   ├── garoon_glossary.md   (optional)
 │   ├── garoon_bugs.md       (optional)
