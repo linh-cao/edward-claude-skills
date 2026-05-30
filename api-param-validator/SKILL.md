@@ -1,6 +1,6 @@
 ---
 name: api-param-validator
-description: 'Automates API parameter data validation testing for Garoon APIs using Postman + Newman. Use this skill whenever the user wants to: generate Postman test cases for API parameters, validate path/query/body parameters with invalid data, run automated API validation with Newman, create test collections for GET/POST/DELETE endpoints, or test data types like wrong type, special characters, out-of-range values, invalid formats. Trigger on phrases like "test API params", "validate parameters", "generate Postman collection", "auto test API", "run API validation", "test data validation for endpoint", or any mention of testing parameters with various invalid data types. Always use this skill when the user provides an API spec and asks to test it — even if they do not explicitly say "skill".'
+description: 'Automates API parameter data validation testing for Garoon APIs using Postman + Newman. Use this skill whenever the user wants to: generate Postman test cases for API parameters, validate path/query/body parameters with invalid data, run automated API validation with Newman, create test collections for GET/POST/DELETE/PUT/PATCH endpoints, or test data types like wrong type, special characters, out-of-range values, invalid formats. Trigger on phrases like "test API params", "validate parameters", "generate Postman collection", "auto test API", "run API validation", "test data validation for endpoint", or any mention of testing parameters with various invalid data types. Always use this skill when the user provides an API spec and asks to test it — even if they do not explicitly say "skill".'
 ---
 
 # API Parameter Validator
@@ -10,14 +10,16 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 ---
 ## Safety and Runtime Rules
 
-- Never print, log, or save real tokens/session cookies in generated files or reports.
-- Always use `{{token}}` or another environment variable for authentication.
+- Never print, log, or save real credentials (X-Cybozu-Authorization / base64 of username:password) in generated files or reports.
+- Always use `{{cybozu_auth}}` (or another environment variable) for authentication.
 - Do not hard-code credentials into `collection.json`.
-- For POST and DELETE requests, assume the request may modify data.
-- Warn the user before running POST/DELETE against a non-test environment.
+- For POST/PUT/PATCH/DELETE requests, assume the request may modify data.
+- Warn the user before running POST/PUT/PATCH/DELETE against a non-test environment.
 - If DELETE requires an existing resource ID, ask the user for a disposable test resource ID.
 - If POST creates data, prefer using clearly identifiable test data and include cleanup notes when applicable.
-
+- Only run against test environments.
+- Cloud Neco: the domain MUST contain `cybozu-dev`. If it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
+- Onpremise: the site is IP-based. No need to confirm with the user that it is a test instance before running. Just run normally. 
 ---
 
 ## How to Invoke This Skill
@@ -27,19 +29,18 @@ Prompt format:
 Test API params for [METHOD] [endpoint] on [site].
 Spec: [paste content here, or attach file/screenshot]
 Testspec: [attach file if available — optional]
-Token: [bearer token or cookie value]
+Auth: base64(username:password) for X-Cybozu-Authorization header
 ```
 
 Example:
 ```
 Test API params for GET /api/v1/schedule/events on https://example.garoon.com
-Token: Bearer eyJhbGci...
+Auth: dTEwOjE...   (base64 of username:password)
 Spec:
 event_id (path, integer, required): ID of the event
 limit (query, integer, optional): max 100, min 1
 start_datetime (query, datetime, optional): ISO 8601 format
 ```
-
 ---
 
 ## Step 0 — Check Required Inputs
@@ -48,13 +49,30 @@ Before proceeding, verify these are present. If anything is missing, ask the use
 
 | Input | Required | Notes |
 |---|---|---|
-| HTTP method | YES | GET / POST / DELETE |
+| HTTP method | YES | Common: GET / POST / DELETE / PUT / PATCH. Methods with a request body (POST/PUT/PATCH) follow the body-field rules in Step 4 |
 | Endpoint path | YES | e.g. `/api/v1/schedule/events/{event_id}` |
 | Garoon site URL | YES | e.g. `https://example.garoon.com` |
 | API spec | YES | See "Providing Spec" below |
-| Auth token | YES | Bearer token or session cookie |
-| Request body schema | POST only | Required if method is POST |
+| Auth header | YES | Garoon uses header `X-Cybozu-Authorization` = base64(username:password). Stored as env var, never hard-coded. Note: base64 is reversible, treat as a secret |
+| Request body schema | POST/PUT/PATCH | Required if the method has a request body |
 | Testspec file | Optional | Contains test cases + expected results; if provided, will be combined with spec to determine accurate expected results |
+
+### Environments and URL Construction
+
+Two supported environments:
+- Cloud Neco: base_url ends in `/g/`   (e.g. https://ed21087-1.cybozu-dev.com/g/)
+- Onpremise:  base_url ends in `/grn/` (e.g. http://10.224.152.xxx/grn/)
+
+The full request URL = base_url + endpoint path.
+Drop `index.csp?` from any pasted site URL — that is the UI entry, not the API root.
+base_url must end in `/g/` or `/grn/`; append the endpoint path directly after it.
+
+Example:
+- Endpoint : api/internal/message/messages/{messageId}/comments/{commentId}
+- Cloud    : https://ed21087-1.cybozu-dev.com/g/api/internal/message/messages/{messageId}/comments/{commentId}
+- Onpremise: http://10.224.152.xxx/grn/api/internal/message/messages/{messageId}/comments/{commentId}
+
+See `references/garoon_api_conventions.md` for full URL/convention details if it exists.
 
 ### Providing Spec (when direct link sharing is restricted)
 
@@ -90,24 +108,25 @@ For each parameter, note:
 - Constraints: min, max, enum, format, pattern
 - Any special business logic mentioned in spec
 
-### Nested Body Parsing (POST)
+### Nested Body Parsing (POST/PUT/PATCH)
 
-For POST request bodies, recursively flatten ALL nested fields into leaf paths,
+For POST/PUT/PATCH request bodies, recursively flatten ALL nested fields into leaf paths,
 regardless of field names. Use this notation:
-
+```
 - Object field      → <parent>.<child>
 - Array of objects  → <array>[].<child>
 - Array of values   → <array>[]
-
+```
 Apply this to whatever field names appear in the actual spec/testspec/body —
 the names below are only examples of the notation, not fixed fields.
 
 Example (body with fields "mentions", "attachmentIds"):
+```
   mentions[].id        (string)
   mentions[].type      (enum)
   attachmentIds[]      (array of string)
   data                 (string)
-
+```
 Record each leaf field with its type, exactly like top-level params.
 If the spec does not describe a nested field's type, infer it from the
 example body or testspec; if still unclear, ask the user.
@@ -129,7 +148,7 @@ If the user attaches a testspec file, read and extract the following for each te
 
 Then cross-reference with the parameter map from Step 1:
 
-### Merge expected results
+### Record expected results (merged later in Step 4)
 For each test case in the testspec:
 - If it matches a parameter + data type/label already in sample_data -> use the expected result from testspec instead of the default 4xx
 - If testspec contains a case not covered by sample_data -> add it as a new test case
@@ -145,10 +164,10 @@ Check for conflicts between spec and testspec and report them before proceeding.
 
 Report each conflict in this format:
 ```
-  Conflict detected — [param_name]
-  Spec     : [what the spec says]
-  Testspec : [what the testspec says]
-  Question : [specific question for the user to clarify]
+Conflict detected — [param_name]
+Spec     : [what the spec says]
+Testspec : [what the testspec says]
+Question : [specific question for the user to clarify]
 ```
 
 Stop and wait for user confirmation before generating the collection if any conflict is found.
@@ -169,6 +188,7 @@ Read from `sample_data/` based on each parameter's type:
 | boolean | `sample_data/boolean.json` |
 | id (numeric identifier) | `sample_data/id.json` |
 | enum | `sample_data/enum.json` |
+| array | Use the element type's file (e.g. array of string → string.json) for element values. Array-structural cases (empty array, duplicate, wrong element type) come from Step 4 Nested Body Field Rules |
 
 Each file contains labeled invalid test values. Additionally, for each parameter with `min`/`max` constraints, append out-of-range values dynamically.
 
@@ -213,6 +233,7 @@ These rules apply to any nested field, regardless of its name:
 - For an array of primitives, additionally test: empty array,
   wrong element type, and duplicate values.
 - Naming for nested cases follows the same convention using the leaf path:
+  POST /schedule/events | mentions[].id: string_value
   POST /schedule/events | mentions[].type: invalid_enum
   POST /schedule/events | attachmentIds[]: wrong_element_type
 
@@ -249,7 +270,7 @@ DELETE /schedule/events/{id} | event_id: string_value
 In scope:
 - Path parameters
 - Query string parameters
-- Request body fields (POST)
+- Request body fields (POST/PUT/PATCH)
 
 Out of scope — do NOT generate:
 - Auth / login flows
@@ -264,13 +285,17 @@ Out of scope — do NOT generate:
 Output file: `output/collection.json` (Postman Collection v2.1 format)
 
 Each request must include:
-1. Pre-request script — inject expected_status using the value determined in Step 4:
+1. These headers:
+- X-Cybozu-Authorization: {{cybozu_auth}}   (base64 of username:password, from env var)
+- Content-Type: application/json
 
+2. Pre-request script — inject expected_status using the value determined in Step 4:
+```javascript
   pm.variables.set("expected_status", "400");
-
+```
 The value follows the priority order: testspec → spec constraint → default 4xx.
 
-2. Test script (assertions):
+3. Test script (assertions):
 ```javascript
 // Each request sets its own expected_status variable based on
 // priority: testspec → spec constraint → default 4xx
@@ -283,28 +308,31 @@ pm.test("Status is " + expected, function () {
 
 Use environment variables throughout:
 - {{base_url}} — Garoon site URL
-- {{token}} — Auth token
+- {{cybozu_auth}} — base64 of username:password (used in X-Cybozu-Authorization header)
 
 ---
 
 ## Step 6 — Run Newman
 
-Check if Newman is installed. If not, show setup instructions:
-
+Check if Newman is installed by running: 
+```bash
+newman --version
+```
+- If it returns a version -> skip install, go straight to "Run command".
+- If it returns "command not found" -> run the install step below:
 ```bash
 # Install (one-time)
-npm install -g newman newman-reporter-htmlextra
+pnpm add -g newman newman-reporter-htmlextra
 ```
 
 Run command:
 ```bash
 newman run output/collection.json \
   --env-var "base_url=SITE_URL" \
-  --env-var "token=TOKEN_VALUE" \
+  --env-var "cybozu_auth=BASE64_VALUE" \
   --reporters cli,htmlextra \
   --reporter-htmlextra-export output/report.html
 ```
-
 ---
 
 ## Step 7 — Report Summary
@@ -320,12 +348,17 @@ Failed      : 4
 Failed cases (source: testspec / spec constraint / sample_data default):
 
 - limit: string_value      -> Expected 400, got 200  [source: sample_data default]
-- event_id: float_number   -> Expected 400, got 500  [source: sample_data default]
+- event_id: float_number   -> Expected 400, got 500  [source: sample_data default] [POTENTIAL BUG: got 500]
 - start_datetime: spaces   -> Expected 400, got 200  [source: testspec]
 - offset: long_number      -> Expected 400, got 200  [source: spec constraint]
 
 Full HTML report: output/report.html
 ```
+
+When the actual status is 5xx (especially 500), flag it separately with
+`[POTENTIAL BUG: got 5xx]` in the report, not just as a normal mismatch.
+A 5xx on invalid input usually means the API did not handle validation
+gracefully (unhandled exception) — a higher-severity signal worth highlighting.
 
 ---
 
