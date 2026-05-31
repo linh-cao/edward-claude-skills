@@ -27,13 +27,13 @@ Prompt format:
 Test API params for [METHOD] [endpoint] on [site].
 Spec: [paste content here, or attach file/screenshot]
 Testspec: [attach file if available — optional]
-Auth: base64(username:password) for X-Cybozu-Authorization header
+Auth: username:password (e.g. user1:1) — the skill base64-encodes it for the X-Cybozu-Authorization header
 ```
 
 Example:
 ```
 Test API params for GET /api/v1/schedule/events on https://example.garoon.com
-Auth: dTEwOjE...   (base64 of username:password)
+Auth: user1:1
 Spec:
 event_id (path, integer, required): ID of the event
 limit (query, integer, optional): max 100, min 1
@@ -50,7 +50,7 @@ Before proceeding, verify these are present. If anything is missing, ask the use
 | Endpoint path | YES | e.g. `/api/v1/schedule/events/{event_id}` |
 | Garoon site URL | YES | e.g. `https://example.garoon.com` |
 | API spec | YES | See "Providing Spec" below |
-| Auth header | YES | Garoon uses header `X-Cybozu-Authorization` = base64(username:password). Stored as env var, never hard-coded. Note: base64 is reversible, treat as a secret |
+| Auth credentials | YES | Provide as `username:password` (e.g. user1:1). The skill base64-encodes the whole string for the `X-Cybozu-Authorization` header. Never log the raw credentials or the encoded value. Note: base64 is reversible, treat as a secret |
 | Request body schema | POST/PUT/PATCH | Required if the method has a request body |
 | Testspec file | Optional | Contains test cases + expected results; if provided, will be combined with spec to determine accurate expected results |
 
@@ -72,10 +72,13 @@ See `references/garoon_api_conventions.md` for full URL/convention details if it
 ### Providing Spec (when direct link sharing is restricted)
 Ask the user to choose one of these methods:
 1. Paste content directly — Copy text from sharedoc into the prompt (preferred)
-2. Attach .md / .txt file — Export sharedoc to file and attach
+2. Attach a file — .md, .txt, or .pdf
 3. Screenshot — Attach a screenshot; Claude will read it
 
-If spec is unclear or ambiguous in places, see "Clarifying the Spec" section before generating.
+The prompt format shown above is a guideline, not a strict template. The spec may be
+typed inline, pasted, attached as a file (.md / .txt / .pdf), or given as a screenshot
+— accept whichever form the user provides. The spec may also be incomplete; if so, see
+"Clarifying the Spec" before generating.
 
 ---
 
@@ -181,7 +184,8 @@ Read from `sample_data/` based on each parameter's type:
 | boolean | `sample_data/boolean.json` |
 | id (numeric identifier) | `sample_data/id.json` |
 | enum | `sample_data/enum.json` |
-| array | Use the element type's file (e.g. array of string → string.json) for element values. Array-structural cases (empty array, duplicate, wrong element type) come from Step 4 Nested Body Field Rules |
+| array | Use the element type's file (e.g. array of string → string.json, array of integer → integer.json) for element values. Array-structural cases (empty array, duplicate, wrong element type) come from Step 4 Nested Body Field Rules |
+| body (raw payload) | `sample_data/body.json` — whole-body cases for POST/PUT/PATCH. Sent VERBATIM as the request body, NOT parsed or re-serialized |
 
 Each file contains labeled invalid test values. Additionally, for each parameter with `min`/`max` constraints, append out-of-range values dynamically.
 
@@ -228,6 +232,26 @@ These rules apply to any nested field, regardless of its name:
   POST /schedule/events | mentions[].type: invalid_enum
   POST /schedule/events | attachmentIds[]: wrong_element_type
 
+### Whole-Body Validation Rules (POST/PUT/PATCH only)
+In addition to field-level cases, generate body-level cases that send an invalid
+request body as a whole (raw payload), independent of individual fields.
+Load these from `sample_data/body.json`.
+
+IMPORTANT: each body.json value is the COMPLETE raw request body. Send it verbatim
+as the request body — do NOT parse it or re-serialize it (some values are
+intentionally invalid JSON; parsing would either error out or "fix" them and
+defeat the test).
+
+Covered cases include: malformed JSON, special-characters-only body, wrong root
+type (array/string/null instead of object), empty body, and empty object `{}`.
+
+Most should return 4xx (malformed / invalid schema). Expected result follows the
+usual priority: testspec → spec → default 4xx.
+Naming: POST /schedule/comments | body: malformed_json
+
+For GET/DELETE (no request body), these whole-body cases do not apply and are not
+generated — do not list them as skipped.
+
 ### Enum Field Rules
 For any field whose spec/testspec defines a fixed set of allowed values:
 - Generate cases: value outside the allowed set, wrong case
@@ -258,6 +282,7 @@ In scope:
 - Path parameters
 - Query string parameters
 - Request body fields (POST/PUT/PATCH)
+- Whole request body (malformed / wrong-type raw payloads) for POST/PUT/PATCH
 
 Out of scope — do NOT generate:
 - Auth / login flows
@@ -307,12 +332,16 @@ if (expectedErrorCode) {
 // Note: the error `message` text is intentionally NOT asserted.
 ```
 
+4. For whole-body cases (values from body.json): set the RAW request body to the
+   value verbatim — do not parse or re-serialize it. Keep header
+   Content-Type: application/json (sending an invalid body with a JSON content-type
+   is intentional; the API should reject it). This applies only to POST/PUT/PATCH.
+
 Use environment variables throughout:
 - {{base_url}} — Garoon site URL
 - {{cybozu_auth}} — base64 of username:password (used in X-Cybozu-Authorization header)
 
 ### Special Value Handling
-
 Some sample_data files may include sentinel values that are markers, NOT literal
 values to send. They apply to ANY data type (boolean, integer, string, etc.) —
 handle them the same way everywhere. Never send the literal sentinel string as the value.
@@ -339,6 +368,21 @@ These rules are shared across all sample_data files; do not special-case per typ
 ---
 
 ## Step 6 — Run Newman
+### Prepare Auth
+Accept the credentials in whatever form the user provides, for example:
+- `user1:1`
+- `user1/1`
+- `login name: user1, pw: 1`
+- `username: user1, password: 1`
+
+Identify the username and password from any of these forms, then normalize to the
+string `username:password` (e.g. `user1:1`) and base64-encode it verbatim.
+The result becomes the `cybozu_auth` value used for the X-Cybozu-Authorization header.
+Passwords are typically simple (e.g. `1`, `cybozu`, `cybozu123`).
+Do NOT print the raw credentials or the encoded value in any output.
+
+Example: login name user1 / pw 1 -> "user1:1" -> base64 -> dTEwOjE... (cybozu_auth)
+
 Check if Newman is installed by running: 
 ```bash
 newman --version
@@ -440,6 +484,7 @@ Add test : [specific data or case to add]
 api-param-validator/
 ├── SKILL.md
 ├── sample_data/
+│   ├── body.json
 │   ├── boolean.json
 │   ├── datetime.json
 │   ├── email.json
