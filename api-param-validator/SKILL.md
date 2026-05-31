@@ -103,6 +103,7 @@ For each parameter, note:
 - Constraints: min, max, enum, format, pattern
 - Any special business logic mentioned in spec
 - Expected error status and/or errorCode for invalid input, IF the spec documents them (e.g. invalid event_id -> 404 / GRN_SCHD_13001)
+- Distinguish `date` (date only, e.g. 2025-05-28) from `datetime` (date + time, e.g. 2025-05-28T10:30:00Z) — they have opposite valid/invalid expectations (see Step 4)
 
 ### Nested Body Parsing (POST/PUT/PATCH)
 For POST/PUT/PATCH request bodies, recursively flatten ALL nested fields into leaf paths,
@@ -129,6 +130,17 @@ example body or testspec; if still unclear, ask the user.
 Add each flattened leaf field as an entry in the `body_fields` array of the
 parameter map (same structure as path_params/query_params: name, type,
 required, constraints). The leaf path is the field "name".
+
+### Detecting enum fields
+Specs rarely label a field `type: enum`. Infer enum from prose that lists a fixed
+set of allowed values, for example:
+- "The value is USER / GROUP / STATIC_ROLE"
+- "Must be one of: ACTIVE, INACTIVE"
+- "Allowed values: ..." or "... otherwise an error is returned"
+
+When such a list is detected, treat the field as enum: record its type as `enum`,
+extract the allowed values, and apply the Enum Field Rules in Step 4.
+See `references/garoon_api_conventions.md` for Garoon-specific enum phrasings if it exists.
 
 If `references/garoon_glossary.md` exists -> read it now to understand Garoon-specific terms in the spec.
 
@@ -179,11 +191,11 @@ Read from `sample_data/` based on each parameter's type:
 |---|---|
 | integer / number | `sample_data/integer.json` |
 | string | `sample_data/string.json` |
-| date / datetime | `sample_data/datetime.json` |
-| email | `sample_data/email.json` |
+| datetime (date + time) | `sample_data/datetime.json` |
+| date (date only, no time) | `sample_data/datetime.json` — same file; date-only fields treat time/timezone-bearing values as invalid and bare-date values as valid |
 | boolean | `sample_data/boolean.json` |
-| id (numeric identifier) | `sample_data/id.json` |
-| enum | `sample_data/enum.json` |
+| id (identifier) | Numeric id -> `sample_data/integer.json`; string id -> `sample_data/string.json`. See "ID Field Rules" in Step 4 for id-specific cases |
+| enum | `sample_data/string.json` (enum is a string with a fixed value set). Generic invalid values come from string.json; enum-specific cases (outside set, wrong case, partial match) are generated dynamically per Step 4 Enum Field Rules |
 | array | Use the element type's file (e.g. array of string → string.json, array of integer → integer.json) for element values. Array-structural cases (empty array, duplicate, wrong element type) come from Step 4 Nested Body Field Rules |
 | body (raw payload) | `sample_data/body.json` — whole-body cases for POST/PUT/PATCH. Sent VERBATIM as the request body, NOT parsed or re-serialized |
 
@@ -204,10 +216,10 @@ Default valid value strategy:
 - integer with min/max: use a value inside the range
 - string: use `"test"` unless pattern/enum requires another value
 - enum: use the first valid enum value
-- datetime: use the exact format required by the spec
-- email: use `test@example.com`
+- datetime: use a full ISO 8601 value (e.g. 2025-05-28T10:30:00Z)
+- date: use a bare date in the required format (e.g. 2025-05-28)
 - boolean: use `true`
-- id: ask the user for an existing valid ID unless the spec provides one
+- id: ask the user for an existing valid ID unless the spec provides one (no dedicated id file; uses integer/string)
 
 ### Structure
 For each invalid value per parameter, create one test case:
@@ -218,7 +230,15 @@ For each invalid value per parameter, create one test case:
 Also include:
 - 1 happy path case: all params valid, all required params present → expect 2xx
 
-If the total generated cases exceed ~300, inform the user of the count and ask whether to proceed or narrow scope.
+If the total generated cases exceed ~300, inform the user of the count and ask whether
+to proceed or narrow scope. If the user chooses to narrow, drop cases in this priority
+order (drop lowest first), keeping the highest-signal cases:
+1. KEEP: type-mismatch and required/missing-field cases (highest signal)
+2. KEEP: boundary cases (min/max, empty, zero, out-of-range)
+3. KEEP: format cases (wrong format, invalid timezone, special characters)
+4. DROP FIRST: redundant variants of the same kind on one parameter
+   (e.g. keep ~1 representative "wrong string" case instead of several)
+Always keep the happy-path case.
 
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
@@ -258,8 +278,32 @@ For any field whose spec/testspec defines a fixed set of allowed values:
   (e.g. lowercase when uppercase is required), empty string, null,
   and integer-instead-of-string.
 - Read allowed values from the spec/testspec — do not assume a fixed list.
-- Use sample_data/enum.json for the generic invalid values, and add the
-  "value outside allowed set" dynamically based on the actual enum.
+- Use sample_data/string.json for the generic invalid values, and add the
+  "value outside allowed set" (and wrong-case / partial-match) dynamically based on the actual enum.
+
+### Date vs Datetime Rules
+`date` and `datetime` share sample_data/datetime.json but have OPPOSITE expectations:
+
+- datetime field (date + time): a full ISO 8601 value is valid. Bare-date values
+  like `2025-05-28` (label: date_only) are INVALID (missing time).
+- date field (date only): a bare date like `2025-05-28` is valid. Values carrying
+  time or timezone (e.g. ...T10:30:00Z, no_timezone, invalid_tz_offset) are INVALID.
+
+For date-only fields, prefer the date-form range probes (far_future_date,
+far_past_date) over the datetime ones.
+Expected result still follows the usual priority: testspec → spec → default 4xx.
+
+### ID Field Rules
+IDs do not have their own sample_data file. Reuse integer.json (numeric id) or
+string.json (string id) for type/format cases. Additionally, for id fields:
+
+- nonexistent_id: a well-formed id that does not exist (e.g. a very large number
+  like 999999999) -> expect 404 Not Found, not a validation 4xx.
+- zero and negative values are INVALID for id fields -> expect an error.
+  Treat them as invalid regardless of the generic integer note ("depends on spec").
+
+Expected result follows the usual priority: testspec → spec → default
+(4xx for malformed/zero/negative, 404 for a well-formed but nonexistent id).
 
 ### Optional Parameter Rules
 For optional parameters:
@@ -453,7 +497,6 @@ If the spec or testspec is ambiguous, ask before generating:
 - Is this parameter required or optional?
 - What is the valid range for this numeric field?
 - What datetime format is accepted? (ISO 8601? Unix timestamp?)
-- Is 0 a valid value for this ID field?
 
 Check `references/garoon_glossary.md` for Garoon-specific terms if the file exists.
 Check `references/garoon_api_conventions.md` for common API conventions, status code policy, datetime format, ID behavior.
@@ -467,6 +510,11 @@ Only raise a suggestion if it meets at least one of these criteria:
 - Field type is known to cause bugs (e.g., timezone edge cases for datetime)
 - Bug history in `references/garoon_bugs.md` matches this field type
 - There is a non-obvious data variant likely to expose a real issue
+- A datetime field with no documented timezone rule (timezone handling is a frequent bug source)
+- A field detected as enum from prose, but with no documented behavior for invalid values (unclear rejection)
+- A date vs datetime ambiguity — spec unclear whether the time component is required
+- A field that returned 5xx on invalid input in a previous run (server-side handling gap)
+- A free-text string field with no maxLength specified (unbounded input risk)
 
 Do NOT suggest for routine cases or low-risk fields. Keep it brief.
 
@@ -487,9 +535,6 @@ api-param-validator/
 │   ├── body.json
 │   ├── boolean.json
 │   ├── datetime.json
-│   ├── email.json
-│   ├── enum.json
-│   ├── id.json
 │   ├── integer.json
 │   └── string.json
 ├── references/
