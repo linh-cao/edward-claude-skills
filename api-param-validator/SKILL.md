@@ -18,6 +18,9 @@ Automates data validation testing for Garoon API parameters. Given a spec/testsp
 - If POST creates data, prefer using clearly identifiable test data.
 - Only run against test environments. For Cloud Neco: the domain MUST contain `cybozu-dev`; if it does not, treat the site as non-test (production) and REFUSE to run; warn the user.
 - Onpremise: the site is IP-based, assumed to be a test instance, so run normally without confirmation.
+- Use pnpm exclusively for installing Node packages. NEVER invoke npm or yarn under any circumstances.
+- Never add or override the package registry (no `--registry` flag); always use the registry already configured on the machine.
+- If a pnpm install fails (e.g. 401 Unauthorized, missing global bin dir, network error), STOP and report the exact error to the user. Do NOT try an alternative package manager, an alternative registry, or any workaround. Let the user resolve it manually.
 
 ---
 
@@ -433,11 +436,15 @@ newman --version
 ```
 
 - If it returns a version -> skip install, go straight to "Run command".
-- If it returns "command not found" -> run the install step below:
+- If it returns "command not found" -> install using pnpm ONLY:
 ```bash
-# Install (one-time)
+# Install (one-time) — pnpm only, no npm/yarn, no registry override
 pnpm add -g newman newman-reporter-htmlextra
 ```
+If this pnpm command fails for any reason (401 Unauthorized, ERR_PNPM_NO_GLOBAL_BIN_DIR,
+network/registry error, etc.), STOP immediately and report the exact error to the user.
+Do NOT fall back to npm, yarn, or a different registry. The user will resolve the
+environment/registry issue manually and re-run the skill.
 
 Run command:
 ```bash
