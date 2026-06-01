@@ -1,0 +1,21 @@
+[
+  { "label": "string_value",        "value": "abc",             "note": "Non-numeric string instead of integer" },
+  { "label": "numeric_string",      "value": "123",             "note": "Number as a string — checks if API requires real integer type vs string" },
+  { "label": "alphanumeric",        "value": "123abc",          "note": "Mix of digits and letters" },
+  { "label": "float_number",        "value": 1.5,               "note": "Decimal instead of integer" },
+  { "label": "boolean_value",       "value": true,              "note": "Boolean instead of integer" },
+  { "label": "array_value",         "value": [1, 2],            "note": "Array instead of a single integer — wrong container type" },
+  { "label": "object_value",        "value": {"x": 2},          "note": "Object instead of a single integer — wrong container type" },
+  { "label": "negative_number",     "value": -1,                "note": "Negative value — may be invalid for limit/offset/id; let spec decide" },
+  { "label": "zero",                "value": 0,                 "note": "Zero — boundary; may be valid or not depending on spec" },
+  { "label": "exceeds_int_max",     "value": 999999999999999,        "note": "Exceeds 32-bit signed int range — type overflow probe" },
+  { "label": "leading_zeros",       "value": "007",             "note": "Integer with leading zeros (as string)" },
+  { "label": "scientific_notation", "value": "1e5",             "note": "Scientific notation as string — checks if accepted as integer" },
+  { "label": "special_characters",  "value": "@#$",             "note": "Special characters" },
+  { "label": "spaces",              "value": "   ",             "note": "Whitespace only" },
+  { "label": "empty_string",        "value": "",                "note": "Empty string" },
+  { "label": "null_value",          "value": null,              "note": "Null" },
+  { "label": "no_value",            "value": "__NO_VALUE__",    "note": "Field present but no value. Query -> field=; body -> omit. Handled by Step 5 Special Value Handling" },
+  { "label": "missing_field",       "value": "__OMIT_FIELD__",  "note": "Field key entirely absent everywhere. Tests missing parameter" },
+  { "label": "duplicate_param",     "value": "__DUPLICATE__",   "note": "Send the parameter twice with valid value. Query -> field=valid&field=valid; skipped for body. Expected result is API-dependent" }
+]

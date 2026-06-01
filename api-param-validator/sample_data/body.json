@@ -1,0 +1,17 @@
+[
+  { "label": "malformed_json",     "value": "{ abc }",                              "note": "Garbage inside braces — not valid JSON" },
+  { "label": "special_chars",      "value": "{ @!#$ }",                             "note": "Special characters only — not valid JSON" },
+  { "label": "object_bare_value",  "value": "{2}",                                 "note": "Brace with a bare value, no key — not valid JSON" },
+  { "label": "unclosed_json",      "value": "{ \"data\": \"x\"",                    "note": "Missing closing brace — truncated/unclosed JSON" },
+  { "label": "trailing_comma",     "value": "{ \"data\": \"x\", }",                 "note": "Trailing comma — invalid JSON, common mistake" },
+  { "label": "single_quotes",      "value": "{ 'data': 'x' }",                      "note": "Single quotes instead of double — invalid JSON" },
+  { "label": "wrong_root_array",   "value": "[\"abc\", \"1234\"]",                  "note": "Array as root when an object is expected" },
+  { "label": "plain_string",       "value": "\"just a string\"",                   "note": "String as root when an object is expected" },
+  { "label": "number_root",        "value": "123",                                 "note": "Bare number as root when an object is expected" },
+  { "label": "boolean_root",       "value": "true",                                "note": "Bare boolean as root when an object is expected" },
+  { "label": "null_body",          "value": "null",                                "note": "Null as the whole body" },
+  { "label": "empty_object",       "value": "{}",                                  "note": "Valid JSON but missing all required fields" },
+  { "label": "duplicate_keys",     "value": "{ \"data\": \"a\", \"data\": \"b\" }", "note": "Duplicate keys in body — parses (last wins); tests handling" },
+  { "label": "empty_body",         "value": "",                                    "note": "Empty body (no content)" },
+  { "label": "whitespace_only",    "value": "   ",                                 "note": "Whitespace-only body" }
+]

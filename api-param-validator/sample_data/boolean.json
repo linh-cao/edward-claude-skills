@@ -1,0 +1,15 @@
+[
+  { "label": "string_true",        "value": "true",            "note": "String that looks like a valid boolean — checks coercion" },
+  { "label": "uppercase_bool",     "value": "TRUE",            "note": "Casing variant — checks case-insensitive coercion" },
+  { "label": "random_string",      "value": "abc",             "note": "Arbitrary non-boolean string — must be rejected" },
+  { "label": "integer_1",          "value": 1,                 "note": "Integer instead of boolean — may be coerced" },
+  { "label": "integer_0",          "value": 0,                 "note": "Integer instead of boolean — may be coerced" },
+  { "label": "negative_number",    "value": -1,                "note": "Negative number instead of boolean" },
+  { "label": "empty_string",       "value": "",                "note": "Empty string" },
+  { "label": "null_value",         "value": null,              "note": "Null" },
+  { "label": "spaces",             "value": "   ",             "note": "Whitespace only" },
+  { "label": "special_characters", "value": "@#$",             "note": "Special characters (as string)" },
+  { "label": "no_value",           "value": "__NO_VALUE__",    "note": "Field present but no value. Query -> `field=`; body -> omit" },
+  { "label": "missing_field",      "value": "__OMIT_FIELD__",  "note": "Field key entirely absent everywhere. Tests missing parameter" },
+  { "label": "duplicate_param",    "value": "__DUPLICATE__",   "note": "Send the parameter twice with valid value. Query -> field=<valid>&field=<valid>; skipped for body. Expected result is API-dependent" }
+]

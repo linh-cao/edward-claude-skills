@@ -1,0 +1,102 @@
+[
+  {
+    "label": "integer_value",
+    "value": 12345,
+    "note": "Number instead of string — checks strict typing in JSON body"
+  },
+  {
+    "label": "boolean_value",
+    "value": true,
+    "note": "Boolean instead of string"
+  },
+  {
+    "label": "array_value",
+    "value": [
+      "a",
+      "b"
+    ],
+    "note": "Array instead of a single string — wrong container type"
+  },
+  {
+    "label": "object_value",
+    "value": {
+      "x": "y"
+    },
+    "note": "Object instead of a single string — wrong container type"
+  },
+  {
+    "label": "null_value",
+    "value": null,
+    "note": "Null"
+  },
+  {
+    "label": "empty_string",
+    "value": "",
+    "note": "Empty string — checks if blank is rejected/required"
+  },
+  {
+    "label": "halfwidth_spaces",
+    "value": "   ",
+    "note": "Half-width (ASCII U+0020) spaces only"
+  },
+  {
+    "label": "fullwidth_spaces",
+    "value": "　　　",
+    "note": "Full-width (U+3000) spaces only — Japanese IME; often missed by whitespace/trim checks"
+  },
+  {
+    "label": "halfwidth_around_text",
+    "value": "  test  ",
+    "note": "Half-width spaces around content — checks trimming"
+  },
+  {
+    "label": "fullwidth_around_text",
+    "value": "　test　",
+    "note": "Full-width spaces around content — checks if trim handles U+3000"
+  },
+  {
+    "label": "special_characters",
+    "value": "!@#$%^&*()",
+    "note": "Generic special characters"
+  },
+  {
+    "label": "newline_control",
+    "value": "line1\nline2\t",
+    "note": "Newline and tab control characters"
+  },
+  {
+    "label": "emoji",
+    "value": "😀🎉🔥",
+    "note": "Emoji — tests 4-byte UTF-8 / surrogate pair handling"
+  },
+  {
+    "label": "multibyte_unicode",
+    "value": "日本語テスト",
+    "note": "Multibyte (CJK) characters"
+  },
+  {
+    "label": "fullwidth_digits",
+    "value": "１２３",
+    "note": "Full-width digits (U+FF10-FF19) — Japanese IME; checks half/full-width normalization"
+  },
+  {
+    "label": "long_string",
+    "value": "Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies nec, pellentesque eu, pretium abcdef",
+    "note": "Long string (e.g. 256 chars) — length/overflow probe. Skill also appends maxLength-based out-of-range dynamically"
+  },
+  {
+    "label": "no_value",
+    "value": "__NO_VALUE__",
+    "note": "Field present but no value. Query -> field=; body -> omit. Handled by Step 5 Special Value Handling"
+  },
+  {
+    "label": "missing_field",
+    "value": "__OMIT_FIELD__",
+    "note": "Field key entirely absent everywhere. Tests missing parameter"
+  },
+  {
+    "label": "duplicate_param",
+    "value": "__DUPLICATE__",
+    "note": "Send the parameter twice with valid value. Query -> field=valid&field=valid; skipped for body. Expected result is API-dependent"
+  }
+]
