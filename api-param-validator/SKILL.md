@@ -59,16 +59,23 @@ Before proceeding, verify these are present. If anything is missing, ask the use
 
 ### Environments and URL Construction
 Two supported environments:
-- Cloud Neco: base_url ends in `/g/`   (e.g. https://ed21087-1.cybozu-dev.com/g/)
-- Onpremise:  base_url ends in `/grn/` (e.g. http://10.224.152.xxx/grn/)
-The full request URL = base_url + endpoint path.
-Drop `index.csp?` from any pasted site URL — that is the UI entry, not the API root.
-base_url must end in `/g/` or `/grn/`; append the endpoint path directly after it.
+- Cloud Neco: base_url is the app root, e.g. https://ed20961.cybozu-dev.com/g
+- Onpremise:  base_url is the app root, e.g. http://10.224.152.xxx/grn
+
+Normalization (REQUIRED): when reading the site URL, strip any trailing slash from
+base_url before use, so ".../g/" and ".../g" behave the same. Also drop `index.csp?`
+(that is the UI entry, not the API root). Then join the endpoint path with exactly
+ONE leading slash.
+
+The full request URL = base_url (no trailing slash) + "/" + endpoint path.
+This guarantees no double slash (produce .../g/api/..., never .../g//api/...).
 
 Example:
+- Pasted site : https://ed20961.cybozu-dev.com/g/index.csp?pid=1
+- Normalized  : https://ed20961.cybozu-dev.com/g   (drop index.csp? and trailing slash)
 - Endpoint : api/internal/message/messages/{messageId}/comments/{commentId}
-- Cloud    : https://ed21087-1.cybozu-dev.com/g/api/internal/message/messages/{messageId}/comments/{commentId}
-- Onpremise: http://10.224.152.xxx/grn/api/internal/message/messages/{messageId}/comments/{commentId}
+- Full URL Cloud Neco   : https://ed20961.cybozu-dev.com/g/api/internal/message/messages/{messageId}/comments/{commentId}
+- Full URL Onpremise: http://10.224.152.xxx/grn/api/internal/message/messages/{messageId}/comments/{commentId}
 
 See `references/garoon_api_conventions.md` for full URL/convention details if it exists.
 
@@ -243,6 +250,19 @@ order (drop lowest first), keeping the highest-signal cases:
    (e.g. keep ~1 representative "wrong string" case instead of several)
 Always keep the happy-path case.
 
+### Expected Result Integrity (do not fit to actual responses)
+NEVER change a case's expected result just to make it pass against what the API
+actually returned. The whole point is to detect mismatches.
+
+- If the API returns 2xx for an invalid input (i.e. it does NOT validate), KEEP the
+  expected error. Let the case FAIL, and report it as a possible missing-validation bug.
+- Only adjust an expected result when the new value reflects CORRECT, documented
+  behavior — e.g. 405 because an empty path segment routes to a different endpoint.
+  Never adjust merely because "that is what the API returned".
+- When unsure whether the actual behavior is correct, keep the original expected
+  (FAIL) and raise a Smart Suggestion to confirm with the spec author. Do not silently
+  convert it to a pass.
+
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
 - Test each leaf field independently; keep all sibling fields valid.
@@ -347,18 +367,49 @@ Each request must include:
 - X-Cybozu-Authorization: {{cybozu_auth}}   (base64 of username:password, from env var)
 - Content-Type: application/json
 
-2. Pre-request script — inject the expected values determined in Step 4:
+2. URL format (Postman Collection v2.1) — REQUIRED structure:
+Build each request URL as a structured object. A bare {"raw": "..."} alone makes
+Newman report "request url is empty" (it cannot resolve {{base_url}}). Use this exact shape:
+```json
+"url": {
+  "raw": "{{base_url}}<path>[?<query>]",
+  "host": ["{{base_url}}"],
+  "path": ["segment1", "segment2", "..."],
+  "query": [ { "key": "relationId", "value": "abc" } ]
+}
+```
+Rules:
+- `host` MUST be exactly ["{{base_url}}"] (base_url already contains scheme + domain
+  + the /g/ or /grn/ prefix; keep it as a single host element — this is what Newman resolves).
+- `path` MUST list each path segment separately, with the test value substituted into
+  the path parameter segment (e.g. ".../messages/5", path ends with "5").
+- Include `query` ONLY when the case targets a query parameter. Each query param is
+  an object {"key": "...", "value": "..."}.
+- `raw` MUST stay consistent with host/path/query (same value the structured parts encode).
+- Omit `query` entirely for path-parameter or happy-path cases that have no query string.
+
+3. Pre-request script — inject the expected values determined in Step 4:
 ```javascript
+// Set expected status for THIS request
 pm.variables.set("expected_status", "400");
 
-// Optional: set ONLY when testspec or spec provides an expected errorCode (priority: testspec → spec).
-// If none is provided, do not set this variable — the errorCode check will be skipped.
-pm.variables.set("expected_error_code", "GRN_SCHD_13001");
+// Optional errorCode (priority: testspec → spec). MUST reset to avoid leaking
+// a value set by a previous request, since pm.variables persist across requests.
+if (/* this case has an expected errorCode */ false) {
+    pm.variables.set("expected_error_code", "GRN_SCHD_13001");
+} else {
+    pm.variables.unset("expected_error_code");
+}
 ```
+
+IMPORTANT: pm.variables persist across requests in a Newman run. Any optional
+variable (e.g. expected_error_code) MUST be explicitly unset when not used for the
+current case, otherwise it leaks from a previous request and causes false assertions.
+
 - `expected_status` follows the priority order: testspec → spec constraint → default 4xx.
 - `expected_error_code` is optional. Source priority: testspec → spec. Set it only when either provides one for this case; otherwise omit it entirely.
 
-3. Test script (assertions):
+4. Test script (assertions):
 ```javascript
 // 1. Always assert HTTP status (baseline)
 const expected = parseInt(pm.variables.get("expected_status"));
@@ -379,7 +430,7 @@ if (expectedErrorCode) {
 // Note: the error `message` text is intentionally NOT asserted.
 ```
 
-4. For whole-body cases (values from body.json): set the RAW request body to the
+5. For whole-body cases (values from body.json): set the RAW request body to the
    value verbatim — do not parse or re-serialize it. Keep header
    Content-Type: application/json (sending an invalid body with a JSON content-type
    is intentional; the API should reject it). This applies only to POST/PUT/PATCH.
@@ -411,6 +462,15 @@ Default valid value strategy in Step 4):
   Do not assume 4xx — use testspec/spec if available, otherwise flag the result for review.
 
 These rules are shared across all sample_data files; do not special-case per type.
+
+Rendering sentinels into the structured v2.1 URL (query parameters):
+- __NO_VALUE__   -> include the key with empty value: {"key": "relationId", "value": ""}
+                    (and reflect as `relationId=` in raw)
+- __OMIT_FIELD__ -> remove that key from the url.query array entirely
+                    (and remove it from raw)
+- __DUPLICATE__  -> add the key twice in url.query, both with the valid value:
+                    [{"key":"relationId","value":"<valid>"},{"key":"relationId","value":"<valid>"}]
+Keep `raw` consistent with the resulting query array in every case.
 
 ---
 
@@ -447,6 +507,8 @@ Do NOT fall back to npm, yarn, or a different registry. The user will resolve th
 environment/registry issue manually and re-run the skill.
 
 Run command:
+Use the normalized base_url (no trailing slash, per Step 0) in --env-var "base_url=...".
+This keeps the joined URL clean (no double slash).
 ```bash
 newman run output/collection.json \
   --env-var "base_url=SITE_URL" \
@@ -486,6 +548,10 @@ Failed cases (source: testspec / spec constraint / sample_data default):
 
 Full HTML report: output/report.html
 ```
+Do not report a case as passed by having lowered its expected result to match the
+response. A 2xx on invalid input must appear as a FAILED case (or an explicit
+"missing validation" finding), never as a silent pass.
+
 When an expected_error_code was set and the actual errorCode differs (even if the
 HTTP status matched), report it as a failed case with both expected and actual
 errorCode. A correct status but wrong errorCode means the API rejected the input
