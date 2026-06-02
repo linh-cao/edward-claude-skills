@@ -375,7 +375,7 @@ Newman report "request url is empty" (it cannot resolve {{base_url}}). Use this 
   "raw": "{{base_url}}<path>[?<query>]",
   "host": ["{{base_url}}"],
   "path": ["segment1", "segment2", "..."],
-  "query": [ { "key": "relationId", "value": "abc" } ]
+  "query": [ { "key": "relationId", "value": "abc" } ] // example only — replace with the actual param key/value
 }
 ```
 Rules:
