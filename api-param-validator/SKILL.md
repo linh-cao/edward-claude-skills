@@ -45,6 +45,32 @@ start_datetime (query, datetime, optional): ISO 8601 format
 
 ---
 
+## No Fabrication Rule (applies to the entire skill)
+Never invent, guess, or assume information that is not grounded in the spec, the
+testspec, or the sample_data files. Specifically:
+
+- Do NOT invent expected status codes or errorCodes. Use only values documented in
+  the testspec or spec. If neither documents one, fall back to the default rule —
+  never guess a code.
+- Do NOT add test cases, values, or parameters that are not in sample_data or the
+  spec (e.g. do not add xss/sql_injection cases unless they exist in sample_data).
+- Do NOT change an expected result to match what the API actually returned (see
+  Expected Result Integrity in Step 4).
+- Do NOT drop a parameter just because one source omits it. If a parameter appears
+  in the spec or the testspec, include it in testing.
+- If information is missing, ask the user or flag it for review — never fill the
+  gap with an assumption.
+
+### errorCode / status priority
+Resolution order: testspec → spec → (look up the HTTP status for an already-documented
+code via `references/garoon_error_codes.md`, if it exists) → default rule.
+- `garoon_error_codes.md` is a LOOKUP for the STATUS of a code that the testspec/spec
+  already states. It is NOT a source to choose WHICH code applies.
+- Never assign an errorCode taken from `garoon_error_codes.md` (or anywhere) unless
+  the testspec/spec documents that code for the case.
+
+---
+
 ## Step 0 — Check Required Inputs
 Before proceeding, verify these are present. If anything is missing, ask the user before continuing:
 | Input | Required | Notes |
@@ -192,6 +218,14 @@ Question : [specific question for the user to clarify]
 
 Stop and wait for user confirmation before generating the collection if any conflict is found.
 If no conflicts are found, proceed to Step 3 as normal.
+
+### Looking up status from errorCode
+If `references/garoon_error_codes.md` exists, use it to map an errorCode found in the
+testspec/spec to its HTTP status — useful when the testspec states an errorCode but
+not the status (e.g. "Error GRN_REST_API_00202 is returned" -> status 400).
+Match by the code only (ignore the dynamic {param_name} placeholder in the message).
+This is a LOOKUP for codes already documented in the testspec/spec — NOT a license to
+pick or guess a code that the testspec/spec does not state.
 
 ---
 
@@ -611,9 +645,10 @@ api-param-validator/
 │   ├── integer.json
 │   └── string.json
 ├── references/
-│   ├── garoon_glossary.md   (optional)
-│   ├── garoon_bugs.md       (optional)
 │   ├── garoon_api_conventions.md       (optional)
+│   ├── garoon_bugs.md       (optional)
+│   ├── garoon_error_codes.md       (optional)
+│   ├── garoon_glossary.md   (optional)
 │   └── garoon_manual_guideline.md       (optional)
 └── output/                  (generated at runtime)
     ├── collection.json
