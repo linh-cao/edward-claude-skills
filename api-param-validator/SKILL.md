@@ -555,7 +555,18 @@ newman run output/collection.json \
 Before reporting results, check for infrastructure failures (not validation bugs):
 - If all/most cases return 401/403 -> auth is likely wrong. Stop and ask the user to re-check cybozu_auth. Do NOT report these as validation failures.
 - If requests cannot connect (timeout, DNS, connection refused) -> report a connection error and ask the user to check base_url / network / VPN. Do NOT report as test results.
+- If all/most cases return 5xx -> the server may be down or misconfigured. This is an
+  infrastructure problem, not a per-case validation bug. Report it as a server/environment
+  issue and do NOT list each case as a separate bug. (Note: a 5xx on only a FEW specific
+  invalid inputs is different — that is a per-case [POTENTIAL BUG: got 5xx], handled in Step 7.)
 - If Newman exits with an error before completing -> surface the actual error instead of a partial pass/fail summary.
+- If every case "errored" with the same structural error (e.g. "request url is empty", malformed collection) -> this is a collection-generation bug, NOT API behavior.
+  Fix the collection (see the URL object format in Step 5) and re-run. Do NOT report these as API/validation failures.
+  
+Use `references/garoon_error_codes.md` (if it exists) to confirm an infrastructure/auth
+error by its errorCode, rather than guessing from the status alone — e.g.
+GRN_REST_API_00001 / 00003 (401, authentication) or GRN_CMMN_00003 / 00004 (403, app
+unavailable) indicate an environment/auth problem, not a parameter-validation result.
 
 ---
 
@@ -582,6 +593,20 @@ Failed cases (source: testspec / spec constraint / sample_data default):
 
 Full HTML report: output/report.html
 ```
+Output formatting rules:
+- List each failed case EXACTLY ONCE. Do not repeat the failed-case list or any case
+  within it. Build the list by iterating the set of distinct failed cases a single time.
+- Print the summary one time only — do not re-emit the whole report.
+- Each failed case is one self-contained line; never concatenate two cases onto the
+  same line or split one case across overlapping fragments.
+
+Count integrity:
+- The "Failed : N" number MUST equal the number of distinct failed cases listed below it.
+- A case whose HTTP status is correct but whose errorCode differs IS counted as a failed
+  case (see the errorCode rule below) — count it the same way in both the number and the list.
+- Before printing, verify: Total = Passed + Failed + Skipped, and Failed = number of lines
+  in the failed-case list.
+
 Do not report a case as passed by having lowered its expected result to match the
 response. A 2xx on invalid input must appear as a FAILED case (or an explicit
 "missing validation" finding), never as a silent pass.
@@ -596,41 +621,80 @@ When the actual status is 5xx (especially 500), flag it separately with
 A 5xx on invalid input usually means the API did not handle validation
 gracefully (unhandled exception) — a higher-severity signal worth highlighting.
 
+### Classifying failed cases
+Group failed cases into two categories so the reader can separate real bugs from
+expectations that may be too strict. Classify only — never change the expected to make
+a case pass.
+
+[POTENTIAL BUG] — the API behavior contradicts the spec/testspec:
+- 5xx on invalid input (unhandled exception)
+- Missing validation: API returns 2xx for an input the spec/testspec says is invalid
+- API rejects an input the spec/testspec says is valid
+
+[REVIEW EXPECTED] — the case failed but the API behavior may be acceptable; the expected
+value (often a sample_data default, not from testspec/spec) may be too strict:
+- Expected came from "sample_data default" and the API's actual behavior looks reasonable
+- errorCode differs but the status is correct and the alternative code is plausible
+
+Format each failed case with its category tag, e.g.:
+- attachmentIds: object_value ({}) -> Expected 400, got 201  [POTENTIAL BUG: missing validation] [source: testspec row 194]
+- attachmentIds[]: nonexistent_id  -> Expected 400, got 201  [REVIEW EXPECTED: sample_data default may be too strict]
+Keep the [source: ...] tag on every line regardless of category.
+
 ---
 
 ## Clarifying the Spec/TestSpec
-If the spec or testspec is ambiguous, ask before generating:
+This section enforces the No Fabrication Rule: when required information is ambiguous
+or missing, ASK before generating instead of guessing. If a required value cannot be
+determined from spec + testspec + references, STOP and ask before generating the
+collection — do not proceed with an assumed value. (Conflict detection in Step 2 handles
+spec-vs-testspec contradictions; this section handles missing/ambiguous information.)
+
+Common things to clarify:
 - What HTTP status code is expected for invalid data? (400? 422?)
 - Is this parameter required or optional?
+- Is this optional parameter still validated for invalid values, or ignored if malformed?
 - What is the valid range for this numeric field?
+- Is this field a date (date only) or datetime (date + time)?
 - What datetime format is accepted? (ISO 8601? Unix timestamp?)
+- For an integer field, is a numeric string (e.g. "1") accepted, or only a real integer?
+
+In an automated/batch run where asking is not possible, use the documented default and
+FLAG the assumption in the report for review — never assume silently.
 
 Check `references/garoon_glossary.md` for Garoon-specific terms if the file exists.
 Check `references/garoon_api_conventions.md` for common API conventions, status code policy, datetime format, ID behavior.
+Check `references/garoon_error_codes.md` to look up the HTTP status of a documented errorCode.
 
 ---
 
 ## Smart Suggestions
-Only raise a suggestion if it meets at least one of these criteria:
-- Parameter is high-risk: ID field, datetime range, permission-related field
-- Spec is missing constraint info (no min/max, no format specified)
-- Field type is known to cause bugs (e.g., timezone edge cases for datetime)
-- Bug history in `references/garoon_bugs.md` matches this field type
-- There is a non-obvious data variant likely to expose a real issue
-- A datetime field with no documented timezone rule (timezone handling is a frequent bug source)
-- A field detected as enum from prose, but with no documented behavior for invalid values (unclear rejection)
-- A date vs datetime ambiguity — spec unclear whether the time component is required
-- A field that returned 5xx on invalid input in a previous run (server-side handling gap)
-- A free-text string field with no maxLength specified (unbounded input risk)
+Raise a suggestion only when it adds real value. Two kinds:
 
-Do NOT suggest for routine cases or low-risk fields. Keep it brief.
+### A. Pre-run (suggest additional tests based on the spec)
+- High-risk parameter: ID field, datetime/date range, permission-related field
+- Missing constraint in spec (no min/max, no format, no maxLength on free-text string)
+- Bug-prone field type: datetime with no documented timezone rule; date vs datetime
+  ambiguity (unclear if time component is required)
+- Enum detected from prose but no documented behavior for invalid values
+- Bug history in `references/garoon_bugs.md` matches this field type
+- A non-obvious data variant likely to expose a real issue
+
+### B. Post-run (flag based on actual API behavior — higher signal)
+- [POTENTIAL BUG] API returned 2xx for an input the spec/testspec says is invalid
+  (missing validation — e.g. object accepted where array expected)
+- [POTENTIAL BUG] API returned 5xx on invalid input (unhandled exception)
+- [POTENTIAL BUG] API rejected an input the spec/testspec says is valid
+- errorCode mismatch: status correct but errorCode differs from testspec/spec
+- A parameter the spec documents that the API appears not to validate at all
+  (all invalid values returned 2xx)
+
+Do NOT suggest for routine/low-risk cases. Keep each suggestion brief.
 
 Format:
-```
 Warning: Suggestion — [param_name]
 Reason  : [why this is worth flagging]
-Add test : [specific data or case to add]
-```
+Action  : [specific test to add, OR what to confirm with the spec author]
 
 ---
 
@@ -659,7 +723,8 @@ api-param-validator/
 ## Optional: Garoon System Knowledge
 If `references/garoon_glossary.md` exists -> read it during Step 1 to understand field semantics.
 If `references/garoon_bugs.md` exists -> read it during Step 4 to enhance smart suggestions.
-If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, status code policy, datetime format, ID behavior
-If `references/garoon_manual_guideline.md` exists -> read it during Step 1 to Step 4 to understand about Garoon manual guideline/specification
+If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, status code policy, datetime format, ID behavior.
+If `references/garoon_error_codes.md` exists -> use it during Step 2 and Step 4 to look up the HTTP status of an errorCode already documented in the testspec/spec. It is a lookup reference only, not a source to pick codes from.
+If `references/garoon_manual_guideline.md` exists -> read it during Step 1 to Step 4 to understand about Garoon manual guideline/specification.
 
 These files are optional. The skill works without them, but suggestions will be more targeted with them.
