@@ -394,7 +394,9 @@ Out of scope — do NOT generate:
 ---
 
 ## Step 5 — Generate Postman Collection
-Output file: `output/collection.json` (Postman Collection v2.1 format)
+Output file: `./output/collection.json` (Postman Collection v2.1 format) — written relative to the current working
+directory (where the skill was invoked), NOT inside the skill install directory
+(.claude/skills/...). Create the ./output/ folder in the CWD if it does not exist.
 
 Each request must include:
 1. These headers:
@@ -543,12 +545,14 @@ environment/registry issue manually and re-run the skill.
 Run command:
 Use the normalized base_url (no trailing slash, per Step 0) in --env-var "base_url=...".
 This keeps the joined URL clean (no double slash).
+Run newman from the current working directory. Use RELATIVE paths (./output/...) for the
+collection and the report so they land in the CWD, NOT absolute paths into the skill folder.
 ```bash
-newman run output/collection.json \
+newman run ./output/collection.json \
   --env-var "base_url=SITE_URL" \
   --env-var "cybozu_auth=BASE64_VALUE" \
   --reporters cli,htmlextra \
-  --reporter-htmlextra-export output/report.html
+  --reporter-htmlextra-export ./output/report.html
 ```
 
 ### Run Failure Handling
@@ -562,8 +566,8 @@ Before reporting results, check for infrastructure failures (not validation bugs
 - If Newman exits with an error before completing -> surface the actual error instead of a partial pass/fail summary.
 - If every case "errored" with the same structural error (e.g. "request url is empty", malformed collection) -> this is a collection-generation bug, NOT API behavior.
   Fix the collection (see the URL object format in Step 5) and re-run. Do NOT report these as API/validation failures.
-  
-Use `references/garoon_error_codes.md` (if it exists) to confirm an infrastructure/auth
+
+Note: Use `references/garoon_error_codes.md` (if it exists) to confirm an infrastructure/auth
 error by its errorCode, rather than guessing from the status alone — e.g.
 GRN_REST_API_00001 / 00003 (401, authentication) or GRN_CMMN_00003 / 00004 (403, app
 unavailable) indicate an environment/auth problem, not a parameter-validation result.
@@ -591,7 +595,8 @@ Failed cases (source: testspec / spec constraint / sample_data default):
 - offset: long_number      -> Expected 400, got 200  [source: spec constraint]
 - event_id: string_value   -> status OK (400) but errorCode mismatch: expected GRN_SCHD_13001, got GRN_CMMN_00001  [source: testspec]
 
-Full HTML report: output/report.html
+Full HTML report: ./output/report.html
+Collection      : ./output/collection.json
 ```
 Output formatting rules:
 - List each failed case EXACTLY ONCE. Do not repeat the failed-case list or any case
@@ -599,6 +604,9 @@ Output formatting rules:
 - Print the summary one time only — do not re-emit the whole report.
 - Each failed case is one self-contained line; never concatenate two cases onto the
   same line or split one case across overlapping fragments.
+- Report output file paths relative to the current working directory (./output/...),
+  each path on its own line and listed exactly once. Do not print absolute paths into
+  the skill folder, and do not repeat any path line.
 
 Count integrity:
 - The "Failed : N" number MUST equal the number of distinct failed cases listed below it.
@@ -699,6 +707,7 @@ Action  : [specific test to add, OR what to confirm with the spec author]
 ---
 
 ## Folder Structure
+The skill install directory holds ONLY static files (never write output here):
 ```
 api-param-validator/
 ├── SKILL.md
@@ -708,16 +717,21 @@ api-param-validator/
 │   ├── datetime.json
 │   ├── integer.json
 │   └── string.json
-├── references/
-│   ├── garoon_api_conventions.md       (optional)
-│   ├── garoon_bugs.md       (optional)
-│   ├── garoon_error_codes.md       (optional)
-│   ├── garoon_glossary.md   (optional)
-│   └── garoon_manual_guideline.md       (optional)
-└── output/                  (generated at runtime)
+└── references/
+    ├── garoon_api_conventions.md             (optional)
+    ├── garoon_bugs.md                        (optional)
+    ├── garoon_error_codes.md                 (optional)
+    ├── garoon_glossary.md                    (optional)
+    └── garoon_manual_guideline.md            (optional)
+```
+Runtime output is created in the CURRENT WORKING DIRECTORY (the folder where the user
+invoked the skill), NOT inside the skill install directory:
+```
+<current-working-directory>/output/
     ├── collection.json
     └── report.html
 ```
+
 ---
 
 ## Optional: Garoon System Knowledge
