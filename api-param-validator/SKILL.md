@@ -587,23 +587,31 @@ Skipped : 2
 Skipped cases:
 - isActive: duplicate_param  -> skipped (duplicate not applicable in JSON body)
 
-Failed cases (source: testspec / spec constraint / sample_data default):
+[POTENTIAL BUG] — API behavior contradicts spec/testspec; worth reporting
+| Case                   | Expected     | Actual         | Source        | Note                          |
+|------------------------|--------------|----------------|---------------|-------------------------------|
+| event_id: float_number | 400          | 500            | sample_data   | unhandled exception (5xx)     |
 
-- limit: string_value      -> Expected 400, got 200  [source: sample_data default]
-- event_id: float_number   -> Expected 400, got 500  [source: sample_data default] [POTENTIAL BUG: got 500]
-- start_datetime: spaces   -> Expected 400, got 200  [source: testspec]
-- offset: long_number      -> Expected 400, got 200  [source: spec constraint]
-- event_id: string_value   -> status OK (400) but errorCode mismatch: expected GRN_SCHD_13001, got GRN_CMMN_00001  [source: testspec]
+[REVIEW EXPECTED] — case failed but API behavior may be acceptable; verify the expected
+| Case                 | Expected            | Actual              | Source       | Note                          |
+|----------------------|---------------------|---------------------|--------------|-------------------------------|
+| limit: string_value  | 400                 | 200                 | sample_data  | API did not validate type     |
+| start_datetime: spaces | 400               | 200                 | testspec     | see note (1)                  |
+| offset: long_number  | 400                 | 200                 | spec         | over max, not rejected        |
+| event_id: string_value | 400 / GRN_SCHD_13001 | 400 / GRN_CMMN_00001 | testspec  | status ok, errorCode differs  |
+
+Notes:
+(1) start_datetime with surrounding spaces accepted as valid; confirm whether trimming is intended.
 
 Full HTML report: ./output/report.html
 Collection      : ./output/collection.json
 ```
 Output formatting rules:
-- List each failed case EXACTLY ONCE. Do not repeat the failed-case list or any case
+- List each failed case EXACTLY ONCE (one row per case). Do not repeat the failed-case list or any case
   within it. Build the list by iterating the set of distinct failed cases a single time.
 - Print the summary one time only — do not re-emit the whole report.
-- Each failed case is one self-contained line; never concatenate two cases onto the
-  same line or split one case across overlapping fragments.
+- Each failed case is one self-contained table row; never merge two cases into one row
+  or split one case across multiple rows.
 - Report output file paths relative to the current working directory (./output/...),
   each path on its own line and listed exactly once. Do not print absolute paths into
   the skill folder, and do not repeat any path line.
@@ -644,10 +652,16 @@ value (often a sample_data default, not from testspec/spec) may be too strict:
 - Expected came from "sample_data default" and the API's actual behavior looks reasonable
 - errorCode differs but the status is correct and the alternative code is plausible
 
-Format each failed case with its category tag, e.g.:
-- attachmentIds: object_value ({}) -> Expected 400, got 201  [POTENTIAL BUG: missing validation] [source: testspec row 194]
-- attachmentIds[]: nonexistent_id  -> Expected 400, got 201  [REVIEW EXPECTED: sample_data default may be too strict]
-Keep the [source: ...] tag on every line regardless of category.
+Present failed cases in TWO tables — one per category — using these columns:
+Case | Expected | Actual | Source | Note
+- Expected and Actual each combine status and errorCode in one cell as "status / errorCode"
+  (e.g. "400 / GRN_SCHD_13001"); if there is no errorCode, write the status alone (e.g. "400").
+- Keep Note to one short line (≤ ~8 words). For a longer explanation, put a numbered marker
+  in Note (e.g. "see note (1)") and write the full text in a "Notes:" list below that table.
+- Sort: [POTENTIAL BUG] table first, then [REVIEW EXPECTED].
+- If a category has no cases, write "[POTENTIAL BUG] — none" (or the REVIEW equivalent)
+  instead of an empty table.
+- The Source tag (testspec / spec / sample_data) stays in its own column for every row.
 
 ---
 
