@@ -296,6 +296,13 @@ actually returned. The whole point is to detect mismatches.
 - When unsure whether the actual behavior is correct, keep the original expected
   (FAIL) and raise a Smart Suggestion to confirm with the spec author. Do not silently
   convert it to a pass.
+- On "4xx" vs a specific status: when SETTING the expected for an invalid input, use the
+  broad class "4xx" rather than 400, UNLESS the spec/testspec gives a specific status.
+  The exact client-error status varies: most invalid inputs are 400, but a well-formed
+  nonexistent id is 404 (see the ID Field Rules below), and a few cases are 403/405/415/429.
+  Resolving "4xx" to one number happens when INTERPRETING the actual response in Step 7
+  (see `garoon_api_conventions.md`). This is consistent with the ID rule that a
+  nonexistent id expects 404 — both say: don't assume every invalid input is exactly 400.
 
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
@@ -632,6 +639,15 @@ HTTP status matched), report it as a failed case with both expected and actual
 errorCode. A correct status but wrong errorCode means the API rejected the input
 for a different reason than expected.
 
+When the API returns an errorCode that is NOT documented in the testspec/spec:
+- If the actual status still matches the expected status, the case passes on status
+  alone — do not try to interpret the unknown code, and do not fail it just because the
+  code is unfamiliar.
+- If the status does not match, report the unknown code as-is and classify it
+  [REVIEW EXPECTED]. Look it up in `references/garoon_api_conventions.md` /
+  `garoon_error_codes.md` if present; if absent there too, state it is undocumented and
+  needs confirmation. Never invent a meaning or status for an unknown code.
+
 When the actual status is 5xx (especially 500), flag it separately with
 `[POTENTIAL BUG: got 5xx]` in the report, not just as a normal mismatch.
 A 5xx on invalid input usually means the API did not handle validation
@@ -656,8 +672,12 @@ Present failed cases in TWO tables — one per category — using these columns:
 Case | Expected | Actual | Source | Note
 - Expected and Actual each combine status and errorCode in one cell as "status / errorCode"
   (e.g. "400 / GRN_SCHD_13001"); if there is no errorCode, write the status alone (e.g. "400").
-- Keep Note to one short line (≤ ~8 words). For a longer explanation, put a numbered marker
-  in Note (e.g. "see note (1)") and write the full text in a "Notes:" list below that table.
+- Keep Note to one short line (≤ ~8 words), factual. For a longer explanation, put a
+  numbered marker in Note (e.g. "see note (1)") and write the full text in a "Notes:"
+  list below that table. When the reason involves Garoon behavior (status of a code,
+  not-found vs 404, enum handling), cite the convention briefly (e.g. "404 per
+  conventions") instead of reasoning at length. If unsure, state the mismatch in one
+  line and that it needs confirmation — do not speculate about causes.
 - Sort: [POTENTIAL BUG] table first, then [REVIEW EXPECTED].
 - If a category has no cases, write "[POTENTIAL BUG] — none" (or the REVIEW equivalent)
   instead of an empty table.
@@ -711,7 +731,9 @@ Raise a suggestion only when it adds real value. Two kinds:
 - A parameter the spec documents that the API appears not to validate at all
   (all invalid values returned 2xx)
 
-Do NOT suggest for routine/low-risk cases. Keep each suggestion brief.
+Do NOT suggest for routine/low-risk cases. Keep each suggestion brief. When a suggestion
+relies on Garoon behavior, cite `references/garoon_api_conventions.md` briefly rather
+than explaining the behavior from scratch — this keeps suggestions short.
 
 Format:
 Warning: Suggestion — [param_name]
@@ -751,8 +773,8 @@ invoked the skill), NOT inside the skill install directory:
 ## Optional: Garoon System Knowledge
 If `references/garoon_glossary.md` exists -> read it during Step 1 to understand field semantics.
 If `references/garoon_bugs.md` exists -> read it during Step 4 to enhance smart suggestions.
-If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, status code policy, datetime format, ID behavior.
-If `references/garoon_error_codes.md` exists -> use it during Step 2 and Step 4 to look up the HTTP status of an errorCode already documented in the testspec/spec. It is a lookup reference only, not a source to pick codes from.
+If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, datetime format, ID behavior, and enum handling; and during Step 7 to interpret the status/errorCode of a failed case (e.g. not-found vs 404, default-400 rule). Use it to interpret results, never to set expected values.
+If `references/garoon_error_codes.md` exists -> use it during Step 2, Step 4, and Step 7 to look up the HTTP status/meaning of an errorCode (documented in the testspec/spec, or returned in a response). It is a lookup reference only, not a source to pick codes from.
 If `references/garoon_manual_guideline.md` exists -> read it during Step 1 to Step 4 to understand about Garoon manual guideline/specification.
 
 These files are optional. The skill works without them, but suggestions will be more targeted with them.
