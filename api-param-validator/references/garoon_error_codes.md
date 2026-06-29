@@ -24,6 +24,20 @@ This document describes common errors when using the internal API.
 | GRN_REST_API_00211 | Invalid input. | `{param_name}` exceeds the maximum value. | |
 | GRN_REST_API_00212 | Invalid parameter. | Only allowed values for `{param_name}`: `[&&enum_options&&]` | |
 | GRN_REST_API_00220 | Invalid parameter. | The specified date of `{param_name}` is invalid | |
+| GRN_REST_API_00203 | Invalid parameter. | The specified value of `{param2}` is more than or equal to the value of `{param1}`. | |
+| GRN_REST_API_00205 | Invalid parameter. | `{param2}` is mandatory when `{param1}` is specified. | |
+| GRN_REST_API_00206 | Invalid parameter. | The object specified in `{param}` does not exist. | |
+| GRN_REST_API_00207 | Invalid parameter. | There is no permission to the object specified in `{param}`. | |
+| GRN_REST_API_00213 | Invalid parameter. | Only `{type_options}` type(s) can be specified in `{param}`. | |
+| GRN_REST_API_00214 | Invalid parameter. | The following value(s) are required for `{param}`: `[&key_options&]` | |
+| GRN_REST_API_00216 | Invalid parameter. | One of the following values must be specified: `[{param1}, {param2}, {param3}]` | |
+| GRN_REST_API_00221 | Invalid parameter. | The specified time zone of `{param}` is invalid. | |
+| GRN_REST_API_00223 | Invalid parameter. | Both isStartOnly and isAllDay cannot be specified as 'true' at the same time. | |
+| GRN_REST_API_00224 | Invalid parameter. | Either 'end' must be specified, or isStartOnly must be specified as 'true'. | |
+| GRN_REST_API_00225 | Invalid input. | `{param}` contains invalid characters for a file name. | |
+| GRN_REST_API_00226 | Invalid input. | The specified value of `{param}` is not allowed. | |
+| GRN_REST_API_00228 | The specified parameter is not valid. | The following parameters cannot be specified at the same time: `[{param}]` | |
+| GRN_REST_API_00229 | The specified parameter is not valid. | Specify one of the following parameters: `[{param}]` | |
 
 Note: The "Occur Condition" descriptions above are typical/representative. In practice some codes (e.g. GRN_REST_API_00101) may be returned in broader cases than the single condition listed. Match by the error code itself, not by assuming the condition is exhaustive.
 
@@ -41,6 +55,7 @@ Note: The "Occur Condition" descriptions above are typical/representative. In pr
 | FW00007 | Cannot log in. | Incorrect login name or password | Confirm credentials and retry |
 | FW00008 | Cannot log in. | User account is inactive | Request not from Garoon |
 | GRN_REST_API_00007 | Authentication failed. | Operation not allowed with this access token | |
+| GRN_REST_API_00006 | Authentication failed. | The access token expired. | |
 
 ---
 
@@ -108,23 +123,6 @@ Note: This table is for reference only. The actual occur conditions for 520 may 
 
 ---
 
-## Mapping hints for test cases (HINTS ONLY — testspec/spec takes priority)
-These are typical mappings to help look up a likely code. They are NOT rules:
-always prefer the errorCode/status documented in the testspec or spec. Do NOT
-assign a code from these hints unless the testspec/spec documents it for the case.
-
-- Wrong type / malformed parameter value → GRN_REST_API_00202 (400)
-- Missing required parameter             → GRN_REST_API_00201 (400)
-- Value below minimum length             → GRN_REST_API_00208 (400)
-- Value exceeds maximum length           → GRN_REST_API_00209 (400)
-- Value below minimum value              → GRN_REST_API_00210 (400)
-- Value exceeds maximum value            → GRN_REST_API_00211 (400)
-- Invalid enum value                     → GRN_REST_API_00212 (400)
-- Invalid date value                     → GRN_REST_API_00220 (400)
-- Malformed request body                 → GRN_REST_API_00105 (400)
-- Unsupported HTTP method                → GRN_REST_API_00102 (405)
-- Nonexistent resource id                → resource-specific code (e.g. GRN_MSSG_15003), often 404
-
 ## Notes for AI Usage
 - Error structure includes:
   - Error Code
@@ -135,7 +133,12 @@ assign a code from these hints unless the testspec/spec documents it for the cas
   CODE only (e.g. GRN_REST_API_00202). Ignore the dynamic parts of the message
   ({param_name}, [&&enum_options&&]) — the real response fills them with actual values.
 - How the skill uses this file:
-  1. Given an errorCode documented in the testspec/spec, look up its HTTP status
-     (e.g. GRN_REST_API_00202 → 400) — useful when the testspec states a code but not a status.
-  2. Use the mapping hints only as a fallback guide, never to override testspec/spec.
-  3. This file is a LOOKUP reference, not a source to pick codes from freely.
+  1. Given an errorCode documented in the testspec/spec, look up its HTTP status and
+     meaning (e.g. GRN_REST_API_00202 → 400). Useful when the testspec states a code
+     but not a status.
+  2. This file is a LOOKUP dictionary (code → meaning → status), NOT a source to pick
+     codes from freely.
+  3. For API BEHAVIOR patterns (which input causes which code, not-found vs 404,
+     boolean/enum handling, how to treat an unknown code), see
+     `garoon_api_conventions.md`. This file answers "what a code means"; the
+     conventions file answers "how the API behaves".
