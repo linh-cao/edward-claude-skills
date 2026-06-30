@@ -362,12 +362,17 @@ IDs do not have their own sample_data file. Reuse integer.json (numeric id) or
 string.json (string id) for type/format cases. Additionally, for id fields:
 
 - nonexistent_id: a well-formed id that does not exist (e.g. a very large number
-  like 999999999) -> expect 404 Not Found, not a validation 4xx.
-- zero and negative values are INVALID for id fields -> expect an error.
-  Treat them as invalid regardless of the generic integer note ("depends on spec").
+  like 999999999) -> expect a 4xx error. Garoon usually treats this as not-found and
+  returns 404 (e.g. GRN_SPACE_00021 for a missing folder), but use the broad class 4xx
+  unless the testspec/spec gives a specific status.
+- zero and negative values are INVALID for id fields -> expect a 4xx error. Note that
+  zero often behaves like a nonexistent id and returns 404, not a 400 validation error,
+  so do not harden the expected to 400.
+- malformed id (wrong type/format, e.g. "abc", 1.5) -> expect 400 (type/format validation).
 
-Expected result follows the usual priority: testspec → spec → default
-(4xx for malformed/zero/negative, 404 for a well-formed but nonexistent id).
+Expected result follows the usual priority: testspec → spec → default 4xx. Resolve the
+exact status (400 vs 404) only when interpreting the actual response (see Step 7 /
+garoon_api_conventions.md). Do not assume every invalid id is exactly 400.
 
 ### Optional Parameter Rules
 For optional parameters:
