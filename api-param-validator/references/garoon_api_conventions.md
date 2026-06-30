@@ -55,6 +55,7 @@ Everything not listed here defaults to 400. These are the only common non-400 co
 | GRN_BLLT_16003 / 16005 / 16082 | Bulletin: cannot find topic / draft / survey |
 | GRN_CMMN_00105 | Cannot find the specified user |
 | GRN_SCHD_13001 / 13203 | Schedule: cannot find appointment / facility |
+| GRN_SPACE_00021 | Space: cannot find the specified folder (folderId not found / 0; confirmed 404 on live API) |
 
 **405 / 415 / 429**
 | Code | Status | Meaning |
