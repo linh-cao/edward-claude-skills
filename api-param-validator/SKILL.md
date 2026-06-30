@@ -303,11 +303,14 @@ actually returned. The whole point is to detect mismatches.
   Resolving "4xx" to one number happens when INTERPRETING the actual response in Step 7
   (see `garoon_api_conventions.md`). This is consistent with the ID rule that a
   nonexistent id expects 404 — both say: don't assume every invalid input is exactly 400.
-- When the spec/testspec documents a field constraint (maxLength, min/max, enum,
-  required, datetime format), use `references/garoon_rest_common_spec.md` to map that
-  constraint to the expected error code (e.g. documented maxLength → over-length →
-  00209; enum → 00212; required → 00201). Only where the constraint is documented — do
-  not infer a constraint the spec does not state; otherwise fall back to sample_data validity.
+- When the spec/testspec documents ANY constraint for a field — e.g. type, required,
+  min/max value, min/max length, enum (allowed values), datetime format, timezone, or
+  filename rules — use `references/garoon_rest_common_spec.md` to map that constraint to
+  the expected error code (e.g. over-length → 00209, over-max value → 00211, invalid enum
+  → 00212, required-but-empty → 00201, bad datetime → 00220). This applies to every
+  documented constraint, not just length. Only where the constraint is documented for that
+  field — do not infer a constraint the spec does not state; otherwise fall back to the
+  sample_data validity default.
 
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
