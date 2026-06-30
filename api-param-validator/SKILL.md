@@ -672,12 +672,17 @@ Present failed cases in TWO tables — one per category — using these columns:
 Case | Expected | Actual | Source | Note
 - Expected and Actual each combine status and errorCode in one cell as "status / errorCode"
   (e.g. "400 / GRN_SCHD_13001"); if there is no errorCode, write the status alone (e.g. "400").
-- Keep Note to one short line (≤ ~8 words), factual. For a longer explanation, put a
-  numbered marker in Note (e.g. "see note (1)") and write the full text in a "Notes:"
-  list below that table. When the reason involves Garoon behavior (status of a code,
-  not-found vs 404, enum handling), cite the convention briefly (e.g. "404 per
-  conventions") instead of reasoning at length. If unsure, state the mismatch in one
-  line and that it needs confirmation — do not speculate about causes.
+- The Note cell must be short — at most ~50 characters (a short tag or phrase, e.g.
+  "reasonable", "status ok; 00201 not 00105", "404 per conventions"). If the explanation
+  is longer than that, put a numbered marker ("see note (N)") in the cell and write the
+  full text in the "Notes:" list below the table.
+- Apply this length rule CONSISTENTLY to every row: do not leave a long note inline in
+  one row while moving another row's note to the "Notes:" list. Either a note fits the
+  ~50-char cell, or it becomes "see note (N)" — same rule for all rows.
+- When the reason involves Garoon behavior (status of a code, not-found vs 404, enum
+  handling), cite the convention briefly instead of reasoning at length. If unsure,
+  state the mismatch in one short line / note and that it needs confirmation — do not
+  speculate about causes.
 - Sort: [POTENTIAL BUG] table first, then [REVIEW EXPECTED].
 - If a category has no cases, write "[POTENTIAL BUG] — none" (or the REVIEW equivalent)
   instead of an empty table.
