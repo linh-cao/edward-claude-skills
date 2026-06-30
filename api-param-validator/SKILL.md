@@ -303,6 +303,11 @@ actually returned. The whole point is to detect mismatches.
   Resolving "4xx" to one number happens when INTERPRETING the actual response in Step 7
   (see `garoon_api_conventions.md`). This is consistent with the ID rule that a
   nonexistent id expects 404 — both say: don't assume every invalid input is exactly 400.
+- When the spec/testspec documents a field constraint (maxLength, min/max, enum,
+  required, datetime format), use `references/garoon_rest_common_spec.md` to map that
+  constraint to the expected error code (e.g. documented maxLength → over-length →
+  00209; enum → 00212; required → 00201). Only where the constraint is documented — do
+  not infer a constraint the spec does not state; otherwise fall back to sample_data validity.
 
 ### Nested Body Field Rules
 These rules apply to any nested field, regardless of its name:
@@ -639,6 +644,13 @@ Do not report a case as passed by having lowered its expected result to match th
 response. A 2xx on invalid input must appear as a FAILED case (or an explicit
 "missing validation" finding), never as a silent pass.
 
+Before flagging a 2xx-on-invalid-input as a missing-validation bug, check
+`references/garoon_rest_common_spec.md`: some inputs are accepted by DOCUMENTED behavior
+— e.g. `{}` sent to an array field is treated as `[]`, an undefined/ineffective field is
+ignored, a null on an optional field falls back to its default, and single-line control
+chars are stripped. If the 2xx matches such documented behavior, classify it
+[REVIEW EXPECTED] (documented behavior), not [POTENTIAL BUG].
+
 When an expected_error_code was set and the actual errorCode differs (even if the
 HTTP status matched), report it as a failed case with both expected and actual
 errorCode. A correct status but wrong errorCode means the API rejected the input
@@ -765,10 +777,10 @@ api-param-validator/
 │   └── string.json
 └── references/
     ├── garoon_api_conventions.md             (optional)
-    ├── garoon_bugs.md                        (optional)
+    ├── garoon_bugs.md                        (optional, not yet created)
     ├── garoon_error_codes.md                 (optional)
-    ├── garoon_glossary.md                    (optional)
-    └── garoon_manual_guideline.md            (optional)
+    ├── garoon_glossary.md                    (optional, not yet created)
+    └── garoon_rest_common_spec.md            (optional)
 ```
 Runtime output is created in the CURRENT WORKING DIRECTORY (the folder where the user
 invoked the skill), NOT inside the skill install directory:
@@ -785,6 +797,7 @@ If `references/garoon_glossary.md` exists -> read it during Step 1 to understand
 If `references/garoon_bugs.md` exists -> read it during Step 4 to enhance smart suggestions.
 If `references/garoon_api_conventions.md` exists -> read it during Step 1 to Step 4 to understand common API conventions, datetime format, ID behavior, and enum handling; and during Step 7 to interpret the status/errorCode of a failed case (e.g. not-found vs 404, default-400 rule). Use it to interpret results, never to set expected values.
 If `references/garoon_error_codes.md` exists -> use it during Step 2, Step 4, and Step 7 to look up the HTTP status/meaning of an errorCode (documented in the testspec/spec, or returned in a response). It is a lookup reference only, not a source to pick codes from.
-If `references/garoon_manual_guideline.md` exists -> read it during Step 1 to Step 4 to understand about Garoon manual guideline/specification.
+If `references/garoon_rest_common_spec.md` exists -> use it as the authoritative validation spec: which validator produces which error code (type→00202, require→00201, enum→00212, range→00210/00211, length→00208/00209, datetime→00220, filename→00225), how request values are interpreted ({} → [], int/bool accept string forms, undefined/ineffective fields ignored), and null/default handling. Use it to set an expected ONLY where the spec/testspec defines the constraint for that field; where no constraint is documented, do NOT infer one — fall back to the sample_data validity default. Read during Step 1 to Step 4 (understand validation) and Step 7 (interpret a result).
+Priority when several apply: the testspec/spec for the case always comes first. Then use `garoon_rest_common_spec.md` for documented validation rules, `garoon_error_codes.md` for a code's status/meaning, and `garoon_api_conventions.md` for behavior patterns. None of these files overrides the testspec/spec for a specific case, and none is used to invent an expected the sources do not state.
 
-These files are optional. The skill works without them, but suggestions will be more targeted with them.
+These files are optional. The skill works without them, but with them the expected results, result interpretation, and suggestions are more accurate.
